@@ -110,6 +110,7 @@ public:
   virtual void
   connectNeighbors(std::map<unsigned int, EFANode *> & PermanentNodes,
                    std::map<unsigned int, EFANode *> & TempNodes,
+                   std::set<unsigned int> & ReplacedNodes,
                    std::map<EFANode *, std::set<EFAElement *>> & InverseConnectivityMap,
                    bool merge_phantom_edges) = 0;
   virtual void printElement(std::ostream & ostream) const = 0;
@@ -120,5 +121,6 @@ protected:
                   EFANode *& childOfNeighborNode,
                   EFAElement * childOfNeighborElem,
                   std::map<unsigned int, EFANode *> & PermanentNodes,
-                  std::map<unsigned int, EFANode *> & TempNodes);
+                  std::map<unsigned int, EFANode *> & TempNodes,
+                  std::set<unsigned int> & ReplacedNodes);
 };

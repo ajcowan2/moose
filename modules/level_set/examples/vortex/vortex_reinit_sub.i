@@ -34,6 +34,7 @@
     variable = phi
     phi_0 = phi_0
     epsilon = 0.03
+    use_modified_reinitilization_formulation = true
   []
 []
 

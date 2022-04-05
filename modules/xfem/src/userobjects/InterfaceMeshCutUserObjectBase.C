@@ -151,7 +151,12 @@ InterfaceMeshCutUserObjectBase::initialize()
   for (const auto & node : _cutter_mesh->node_ptr_range())
   {
     Point p = *node;
-    p += _dt * nodeNormal(node->id()) * node_velocity[node->id()];
+    // WJ
+    // if (node->id() != 0 && node->id() != (_cutter_mesh->max_node_id() - 1))
+    if (node->id() != 110 && node->id() != 148 && node->id() != 109)
+      p += _dt * nodeNormal(node->id()) * node_velocity[node->id()];
+    else
+      p += _dt * Point(0, 0, 0) * node_velocity[node->id()];
     new_position[node->id()] = p;
   }
   for (const auto & node : _cutter_mesh->node_ptr_range())

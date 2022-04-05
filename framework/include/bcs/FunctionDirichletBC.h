@@ -10,6 +10,7 @@
 #pragma once
 
 #include "DirichletBCBase.h"
+#include "LinearInterpolation.h"
 
 class Function;
 
@@ -27,6 +28,9 @@ public:
 protected:
   virtual Real computeQpValue() override;
 
+  // virtual bool shouldApply() override;
+
   /// The function being used for evaluation
   const Function & _func;
+  const LinearInterpolation _temp_bc;
 };

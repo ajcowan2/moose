@@ -24,12 +24,35 @@ FunctionDirichletBC::validParams()
 }
 
 FunctionDirichletBC::FunctionDirichletBC(const InputParameters & parameters)
-  : DirichletBCBase(parameters), _func(getFunction("function"))
+  : DirichletBCBase(parameters),
+    _func(getFunction("function")),
+    _temp_bc({0.111607143, 1.97172619,  4.166666667, 7.068452381, 12.46279762,
+              16.33184524, 20.20089286, 23.02827381, 26.07886905, 29.42708333,
+              32.32886905, 34.30059524, 36.45833333, 38.4672619,  39.69494048,
+              41.07142857, 42.187,      44.08482143, 46.39136905, 48.13988095},
+             {840.15, 866.15, 893.15, 920.15, 973.15, 973.15, 973.15, 973.15, 973.15, 920.15,
+              893.15, 866.15, 840.15, 786.15, 760.15, 733.15, 706.15, 680.15, 653.15, 626.15})
+
 {
 }
 
 Real
 FunctionDirichletBC::computeQpValue()
 {
-  return _func.value(_t, *_current_node);
+  Real y = (*_current_node)(1);
+  return _temp_bc.sample(y);
+
+  // return _func.value(_t, *_current_node);
 }
+
+// bool
+// FunctionDirichletBC::shouldApply()
+// {
+//   Real x = (*_current_node)(0);
+//   Real y = (*_current_node)(1);
+
+//   if (std::sqrt(x * x + y * y) < 0.0025)
+//     return true;
+//   else
+//     return false;
+// }

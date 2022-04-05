@@ -1,0 +1,25 @@
+reset
+create surface rectangle width 0.036 height 0.018 zplane 
+move Surface 1  location 0.018 0.027 0 include_merged 
+
+surface 1  size 0.0003
+mesh surface 1 
+
+set duplicate block elements off
+block 1 add surface 1  
+block 1  element type quad4
+
+refine element with  x_coord > 0.002 && x_coord < 0.034 && y_coord > 0.027 numsplit 1
+
+refine element with  x_coord > 0.006 && x_coord < 0.03 && y_coord > 0.032 numsplit 1
+
+refine element with  x_coord > 0.006 && x_coord < 0.03 && y_coord > 0.034 numsplit 1
+
+sideset 1 add curve 1  
+sideset 1 name "top"
+
+set exodus netcdf4 off
+set large exodus on
+export mesh "/Users/JIANW/projects/moose4/modules/xfem/test/tests/diffusion_xfem/pit_mesh.e" overwrite
+
+

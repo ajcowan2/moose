@@ -32,6 +32,7 @@ private:
   std::map<unsigned int, EFANode *> _permanent_nodes;
   std::map<unsigned int, EFANode *> _embedded_nodes;
   std::map<unsigned int, EFANode *> _temp_nodes;
+  std::set<unsigned int> _replaced_nodes;
   std::map<unsigned int, EFANode *> _embedded_permanent_nodes;
   std::map<unsigned int, EFAElement *> _elements;
   std::set<EFAElement *> _crack_tip_elements;
@@ -82,6 +83,7 @@ public:
   const std::map<unsigned int, EFANode *> & getPermanentNodes() { return _permanent_nodes; }
   const std::map<unsigned int, EFANode *> & getTempNodes() { return _temp_nodes; }
   const std::map<unsigned int, EFANode *> & getEmbeddedNodes() { return _embedded_nodes; }
+  const std::set<unsigned int> & getReplacedNodes() { return _replaced_nodes; }
   EFAElement * getElemByID(unsigned int id);
   unsigned int getElemIdByNodes(unsigned int * node_id);
   void clearPotentialIsolatedNodes();

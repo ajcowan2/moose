@@ -227,10 +227,21 @@ XFEM::updateHeal()
 {
   bool mesh_changed = false;
 
+  // std::cout
+  //     <<
+  //     "=========================================BEFORE========================================"
+  //     << std::endl;
+  // _efa_mesh.printMesh();
+
   mesh_changed = healMesh();
 
   if (mesh_changed)
     buildEFAMesh();
+
+  // std::cout
+  //     << "=========================================AFTER========================================"
+  //     << std::endl;
+  // _efa_mesh.printMesh();
 
   if (mesh_changed)
   {
@@ -927,6 +938,22 @@ XFEM::healMesh()
   unsigned int deleted_elem_count = 0;
   std::vector<std::string> healed_geometric_cuts;
 
+  // std::set<unsigned int> replaced_nodes = _efa_mesh.getReplacedNodes();
+  // std::set<unsigned int>::iterator mit;
+  //
+  // std::cout << "size of replaced_nodes = " << replaced_nodes.size() << std::endl;
+  // for (auto const & id : replaced_nodes)
+  // {
+  //   std::cout << id << std::endl;
+  // }
+
+  // std::cout << "lastly added new nodes size = " << _saved_new_nodes.size() << std::endl;
+  //
+  // for (auto const & id : _saved_new_nodes)
+  // {
+  //   std::cout << id << std::endl;
+  // }
+
   for (unsigned int i = 0; i < _geometric_cuts.size(); ++i)
   {
     if (_geometric_cuts[i]->shouldHealMesh())
@@ -945,18 +972,86 @@ XFEM::healMesh()
 
           cutelems_to_delete.insert(elem1->unique_id());
 
+          // std::cout << "insert elem to delete :" << elem1->unique_id() << std::endl;
+          // std::cout << *elem1 << std::endl;
+          // std::cout << *elem2 << std::endl;
+
           for (unsigned int in = 0; in < elem1->n_nodes(); ++in)
           {
             Node * e1node = elem1->node_ptr(in);
             Node * e2node = elem2->node_ptr(in);
-            if (!xfce->isPointPhysical(*e1node) &&
-                e1node != e2node) // This would happen at the crack tip
+
+            bool find = false;
+            auto pos = _saved_new_nodes.find(e1node->id());
+            if (pos != _saved_new_nodes.end())
+              find = true;
+
+            bool find2 = false;
+            pos = _saved_new_nodes.find(e2node->id());
+            if (pos != _saved_new_nodes.end())
+              find2 = true;
+
+            // bool find2 = false;
+            // pos = replaced_nodes.find(e2node->id());
+            // if (pos != replaced_nodes.end())
+            //   find2 = true;
+
+            // std::cout << "111111> id = " << e1node->id()
+            //           << ", isPhyiscal = " << xfce->isPointPhysical(*e1node) << ", find = " <<
+            //           find
+            //           << std::endl;
+            //
+            // std::cout << "222222> id = " << e2node->id()
+            //           << ", isPhyiscal = " << xfce->isPointPhysical(*e2node)
+            //           << ", find2 = " << find2 << std::endl;
+
+            // if (!xfce->isPointPhysical(*e1node) &&
+            //     e1node != e2node) // This would happen at the crack tip
+            // {
+            //   elem1->set_node(in) = e2node;
+            //   nodes_to_delete.insert(e1node);
+            // }
+            // else if (e1node != e2node)
+            // {
+            //   nodes_to_delete.insert(e2node);
+            // }
+
+            if (find)
             {
               elem1->set_node(in, e2node);
               nodes_to_delete.insert(e1node);
             }
-            else if (e1node != e2node)
+            else if (find2)
               nodes_to_delete.insert(e2node);
+            else
+            {
+              std::cout << "find2 = " << find2 << ", find = " << find << std::endl;
+              std::cout << "e1node->id() = " << e1node->id() << ", e2node->id() = " << e2node->id()
+                        << std::endl;
+              std::cout << "elem1 = " << *elem1 << std::endl;
+              std::cout << "elem1 = " << *elem2 << std::endl;
+            }
+
+            // if (e1node->id() != 429)
+            // {
+            //   if (!xfce->isPointPhysical(*e1node) &&
+            //       e1node != e2node) // This would happen at the crack tip
+            //   {
+            //     elem1->set_node(in) = e2node;
+            //     nodes_to_delete.insert(e1node);
+            //     std::cout << "insert node1 " << e1node->id() << std::endl;
+            //   }
+            //   else if (e1node != e2node)
+            //   {
+            //     nodes_to_delete.insert(e2node);
+            //     std::cout << "insert node2 " << e2node->id() << std::endl;
+            //   }
+            // }
+            // else
+            // {
+            //   nodes_to_delete.insert(e2node);
+            //   std::cout << "insert node2 " << e2node->id() << std::endl;
+            // }
           }
         }
         else
@@ -1127,6 +1222,15 @@ XFEM::cutMeshWithEFA(const std::vector<std::shared_ptr<NonlinearSystemBase>> & n
     _efa_mesh.printMesh();
   }
 
+  std::map<unsigned int, EFANode *> permanent_nodes = _efa_mesh.getPermanentNodes();
+  std::map<unsigned int, EFANode *>::iterator mit;
+
+  // for (mit = permanent_nodes.begin(); mit != permanent_nodes.end(); ++mit)
+  // {
+  //   std::cout << "id = " << mit->second->id()
+  //             << ", coordinate = " << *(_mesh->node_ptr(mit->second->id())) << std::endl;
+  // }
+
   _efa_mesh.updateTopology();
 
   if (_debug_output_level > 2)
@@ -1136,9 +1240,19 @@ XFEM::cutMeshWithEFA(const std::vector<std::shared_ptr<NonlinearSystemBase>> & n
     _efa_mesh.printMesh();
   }
 
+  // permanent_nodes.clear();
+  // permanent_nodes = _efa_mesh.getPermanentNodes();
+  // for (mit = permanent_nodes.begin(); mit != permanent_nodes.end(); ++mit)
+  // {
+  //   std::cout << "id = " << mit->second->id()
+  //             << ", coordinate = " << *(_mesh->node_ptr(mit->second->id())) << std::endl;
+  // }
+
   const std::vector<EFANode *> new_nodes = _efa_mesh.getNewNodes();
   const std::vector<EFAElement *> new_elements = _efa_mesh.getChildElements();
   const std::vector<EFAElement *> delete_elements = _efa_mesh.getParentElements();
+
+  _saved_new_nodes.clear();
 
   bool mesh_changed = (new_nodes.size() + new_elements.size() + delete_elements.size() > 0);
 
@@ -1163,11 +1277,14 @@ XFEM::cutMeshWithEFA(const std::vector<std::shared_ptr<NonlinearSystemBase>> & n
   for (unsigned int i = 0; i < new_nodes.size(); ++i)
   {
     unsigned int new_node_id = new_nodes[i]->id();
+
     unsigned int parent_id = new_nodes[i]->parent()->id();
 
     Node * parent_node = _mesh->node_ptr(parent_id);
     Node * new_node = Node::build(*parent_node, _mesh->max_node_id()).release();
     _mesh->add_node(new_node);
+
+    _saved_new_nodes.insert(new_node->id());
 
     new_nodes_to_parents[new_node] = parent_node;
 
@@ -1405,8 +1522,8 @@ XFEM::cutMeshWithEFA(const std::vector<std::shared_ptr<NonlinearSystemBase>> & n
           }
         }
 
-      // Store the current information about the geometrically cut element, and load cached material
-      // properties into the new child element, if any.
+      // Store the current information about the geometrically cut element, and load cached
+      // material properties into the new child element, if any.
       const GeometricCutUserObject * gcuo = getGeometricCutForElem(parent_elem);
       if (gcuo && gcuo->shouldHealMesh())
       {
@@ -1647,10 +1764,17 @@ XFEM::getPhysicalVolumeFraction(const Elem * elem) const
   return phys_volfrac;
 }
 
+<<<<<<< HEAD
 Point
 XFEM::getPhysicalCenterPoint(const Elem * elem) const
 {
   Point cp;
+=======
+Real
+XFEM::getCutPlaneArea(const Elem * elem) const
+{
+  Real area = 0.0;
+>>>>>>> 04e0ed7579 (ls multiapp)
   std::map<unique_id_type, XFEMCutElem *>::const_iterator it;
   it = _cut_elem_map.find(elem->unique_id());
   if (it != _cut_elem_map.end())
@@ -1659,11 +1783,19 @@ XFEM::getPhysicalCenterPoint(const Elem * elem) const
     const EFAElement * EFAelem = xfce->getEFAElement();
     if (EFAelem->isPartial())
     { // exclude the full crack tip elements
+<<<<<<< HEAD
       cp = xfce->getFragmentCenterPoint();
     }
   }
 
   return cp;
+=======
+      area = xfce->getCutPlaneArea();
+    }
+  }
+
+  return area;
+>>>>>>> 04e0ed7579 (ls multiapp)
 }
 
 bool
@@ -2318,6 +2450,7 @@ XFEM::getCutSubdomainID(const GeometricCutUserObject * gcuo,
   // CutSubdomainID.
   const Node * node = pickFirstPhysicalNode(cut_elem, parent_elem);
   return gcuo->getCutSubdomainID(node);
+  return 0;
 }
 
 const Node *

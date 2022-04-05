@@ -52,6 +52,11 @@ ElementFragmentAlgorithm::~ElementFragmentAlgorithm()
     delete mit->second;
     mit->second = nullptr;
   }
+  // for (mit = _replaced_nodes.begin(); mit != _replaced_nodes.end(); ++mit)
+  // {
+  //   delete mit->second;
+  //   mit->second = NULL;
+  // }
   std::map<unsigned int, EFAElement *>::iterator eit;
   for (eit = _elements.begin(); eit != _elements.end(); ++eit)
   {
@@ -303,13 +308,19 @@ ElementFragmentAlgorithm::updateTopology(bool mergeUncutVirtualEdges)
   unsigned int first_new_node_id = Efa::getNewID(_permanent_nodes);
 
   createChildElements();
+
   connectFragments(mergeUncutVirtualEdges);
+
   sanityCheck();
+
   updateCrackTipElements();
 
-  for (const auto & [id, node] : _permanent_nodes)
-    if (id >= first_new_node_id)
-      _new_nodes.push_back(node);
+  std::map<unsigned int, EFANode *>::iterator mit;
+  for (mit = _permanent_nodes.begin(); mit != _permanent_nodes.end(); ++mit)
+  {
+    if (mit->first >= first_new_node_id)
+      _new_nodes.push_back(mit->second);
+  }
 
   clearPotentialIsolatedNodes(); // _new_nodes and _permanent_nodes may change here
 }
@@ -337,6 +348,9 @@ ElementFragmentAlgorithm::reset()
     mit->second = nullptr;
   }
   _temp_nodes.clear();
+
+  // _replaced_nodes.clear();
+
   std::map<unsigned int, EFAElement *>::iterator eit;
   for (eit = _elements.begin(); eit != _elements.end(); ++eit)
   {
@@ -382,6 +396,8 @@ ElementFragmentAlgorithm::clearAncestry()
   }
   _temp_nodes.clear();
 
+  // _replaced_nodes.clear();
+
   _new_nodes.clear();
   _child_elements.clear();
 
@@ -426,9 +442,23 @@ ElementFragmentAlgorithm::connectFragments(bool mergeUncutVirtualEdges)
   for (unsigned int elem_iter = 0; elem_iter < _child_elements.size(); elem_iter++)
   {
     EFAElement * childElem = _child_elements[elem_iter];
-    childElem->connectNeighbors(
-        _permanent_nodes, _temp_nodes, _inverse_connectivity, mergeUncutVirtualEdges);
+    childElem->connectNeighbors(_permanent_nodes,
+                                _temp_nodes,
+                                _replaced_nodes,
+                                _inverse_connectivity,
+                                mergeUncutVirtualEdges);
+
     childElem->updateFragmentNode();
+
+  } // loop over child elements
+
+  std::vector<EFAElement *>::iterator vit;
+  for (vit = _child_elements.begin(); vit != _child_elements.end();)
+  {
+    if (*vit == NULL)
+      vit = _child_elements.erase(vit);
+    else
+      ++vit;
   }
 
   // remove all deleted children

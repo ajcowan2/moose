@@ -23,7 +23,7 @@
     y1 = 25.0
     a = 8.0
     b = 12.0
-    n = 3.5
+    n = 2
     invalue = 1.0
     outvalue = -0.8
     int_width = 4.0
