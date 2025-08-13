@@ -1644,6 +1644,25 @@ XFEM::getPhysicalVolumeFraction(const Elem * elem) const
   return phys_volfrac;
 }
 
+Point
+XFEM::getPhyiscalCenterPoint(const Elem * elem) const
+{
+  Point cp;
+  std::map<unique_id_type, XFEMCutElem *>::const_iterator it;
+  it = _cut_elem_map.find(elem->unique_id());
+  if (it != _cut_elem_map.end())
+  {
+    XFEMCutElem * xfce = it->second;
+    const EFAElement * EFAelem = xfce->getEFAElement();
+    if (EFAelem->isPartial())
+    { // exclude the full crack tip elements
+      cp = xfce->getFragmentCenterPoint();
+    }
+  }
+
+  return cp;
+}
+
 bool
 XFEM::isPointInsidePhysicalDomain(const Elem * elem, const Point & point) const
 {

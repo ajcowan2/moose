@@ -53,6 +53,10 @@
     order = FIRST
     family = LAGRANGE
   [../]
+  [stress_yy_xfem]
+    order = CONSTANT
+    family = MONOMIAL
+  []
 []
 
 [AuxKernels]
@@ -61,6 +65,11 @@
     variable = ls
     function = ls_func
   [../]
+    [stress_yy_xfem]
+      type = XFEMTensorOutput
+variable = stress_yy_xfem
+execute_on = "TIMESTEP_END"
+    []
 []
 
 [Variables]
@@ -73,7 +82,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    expression = 'y-2.5'
+    expression = 'y-2.4+0.1*(x-0.1)'
   [../]
 []
 
@@ -192,14 +201,14 @@
     type = XFEMSingleVariableConstraint
     use_displaced_mesh = false
     variable = disp_x
-    alpha = 1e8
+    alpha = 1e13
     geometric_cut_userobject = 'level_set_cut_uo'
   [../]
   [./dispy_constraint]
     type = XFEMSingleVariableConstraint
     use_displaced_mesh = false
     variable = disp_y
-    alpha = 1e8
+    alpha = 1e13
     geometric_cut_userobject = 'level_set_cut_uo'
   [../]
 []
@@ -207,7 +216,7 @@
 [BCs]
   [./bottomx]
     type = DirichletBC
-    boundary = bottom
+    boundary = left_bottom
     variable = disp_x
     value = 0.0
   [../]
@@ -217,12 +226,12 @@
     variable = disp_y
     value = 0.0
   [../]
-  [./topx]
-    type = FunctionDirichletBC
-    boundary = top
-    variable = disp_x
-    function = 0.03*t
-  [../]
+  # [./topx]
+  #   type = FunctionDirichletBC
+  #   boundary = top
+  #   variable = disp_x
+  #   function = 0.03*t
+  # [../]
   [./topy]
     type = FunctionDirichletBC
     boundary = top
@@ -249,7 +258,7 @@
   [./elasticity_tensor_B]
     type = ComputeIsotropicElasticityTensor
     base_name = B
-    youngs_modulus = 1e5
+    youngs_modulus = 1e9
     poissons_ratio = 0.3
   [../]
   [./strain_B]
@@ -280,18 +289,23 @@
   type = Transient
 
   solve_type = 'PJFNK'
-  petsc_options_iname = '-ksp_gmres_restart -pc_type -pc_hypre_type -pc_hypre_boomeramg_max_iter'
-  petsc_options_value = '201                hypre    boomeramg      8'
+  # petsc_options_iname = '-ksp_gmres_restart -pc_type -pc_hypre_type -pc_hypre_boomeramg_max_iter'
+  # petsc_options_value = '201                hypre    boomeramg      8'
 
-  line_search = 'bt'
+  petsc_options_iname = '-pc_type'
+  petsc_options_value = 'lu'
+
+  # line_search = 'bt'
 
 # controls for linear iterations
   l_max_its = 20
   l_tol = 1e-3
 
+  line_search = 'none'
+
 # controls for nonlinear iterations
   nl_max_its = 15
-  nl_rel_tol = 1e-14
+  nl_rel_tol = 1e-12
   nl_abs_tol = 1e-7
 
 # time control

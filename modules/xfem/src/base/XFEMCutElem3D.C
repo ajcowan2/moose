@@ -261,6 +261,38 @@ XFEMCutElem3D::numCutPlanes() const
   return counter;
 }
 
+Point
+XFEMCutElem3D::getFragmentCenterPoint()
+{
+  Point cp;
+  // Get the coords for parial element nodes
+  std::vector<std::vector<unsigned int>> frag_face_indices;
+  std::vector<EFANode *> frag_nodes;
+  _efa_elem3d.getFragment(0)->getNodeInfo(frag_face_indices, frag_nodes);
+  int face_num = frag_face_indices.size();
+  int node_num = frag_nodes.size();
+
+  int order_max = 0;
+  int * order = new int[face_num];
+  for (int i = 0; i < face_num; ++i)
+  {
+    if (frag_face_indices[i].size() > (unsigned int)order_max)
+      order_max = frag_face_indices[i].size();
+    order[i] = frag_face_indices[i].size();
+  }
+
+  double * coord = new double[3 * node_num];
+  for (unsigned int i = 0; i < frag_nodes.size(); ++i)
+  {
+    Point p = getNodeCoordinates(frag_nodes[i]);
+    cp(0) += p(0) / frag_nodes.size();
+    cp(1) += p(1) / frag_nodes.size();
+    cp(2) += p(2) / frag_nodes.size();
+  }
+
+  return cp;
+}
+
 void
 XFEMCutElem3D::getIntersectionInfo(unsigned int plane_id,
                                    Point & normal,

@@ -22,23 +22,35 @@
 []
 
 [Mesh]
-  type = GeneratedMesh
-  dim = 2
-  nx = 11
-  ny = 11
-  xmin = 0.0
-  xmax = 5.
-  ymin = 0.0
-  ymax = 5.
-  elem_type = QUAD4
   displacements = 'disp_x disp_y'
-[]
+  [gen]
+    type = GeneratedMeshGenerator
+    dim = 2
+    nx = 121
+    ny = 121
+    xmin = 0.0
+    xmax = 5.
+    ymin = 0.0
+    ymax = 5.
+    elem_type = QUAD4
+  []
+  [./left_bottom]
+    type = ExtraNodesetGenerator
+    new_boundary = 'left_bottom'
+    coord = '0.0 0.0'
+    input = gen
+  [../]
+  []
 
 [AuxVariables]
   [./ls]
     order = FIRST
     family = LAGRANGE
   [../]
+    [stress_yy_xfem]
+      order = CONSTANT
+      family = MONOMIAL
+    []
 []
 
 [AuxKernels]
@@ -108,6 +120,10 @@
 []
 
 [AuxKernels]
+  [stress_yy_xfem]
+    type = XFEMTensorOutput
+variable = stress_yy_xfem
+  []
   [./stress_xx]
     type = RankTwoAux
     rank_two_tensor = stress
@@ -193,7 +209,7 @@
 [BCs]
   [./bottomx]
     type = DirichletBC
-    boundary = bottom
+    boundary = left_bottom
     variable = disp_x
     value = 0.0
   [../]
@@ -203,12 +219,12 @@
     variable = disp_y
     value = 0.0
   [../]
-  [./topx]
-    type = FunctionDirichletBC
-    boundary = top
-    variable = disp_x
-    function = '0.03*t'
-  [../]
+  # [./topx]
+  #   type = FunctionDirichletBC
+  #   boundary = top
+  #   variable = disp_x
+  #   function = '0.03*t'
+  # [../]
   [./topy]
     type = FunctionDirichletBC
     boundary = top
@@ -221,7 +237,7 @@
   [./elasticity_tensor_A]
     type = ComputeIsotropicElasticityTensor
     base_name = A
-    youngs_modulus = 1e9
+    youngs_modulus = 1e3
     poissons_ratio = 0.3
   [../]
   [./strain_A]
@@ -235,7 +251,7 @@
   [./elasticity_tensor_B]
     type = ComputeIsotropicElasticityTensor
     base_name = B
-    youngs_modulus = 1e5
+    youngs_modulus = 1e3
     poissons_ratio = 0.3
   [../]
   [./strain_B]

@@ -57,6 +57,7 @@ public:
                                    Point & normal,
                                    std::vector<Point> & intersectionPoints,
                                    MeshBase * displaced_mesh = nullptr) const;
+  virtual Point getFragmentCenterPoint();
 
 private:
   void getPhysicalQuadraturePoints(std::vector<std::vector<Real>> & tsg);

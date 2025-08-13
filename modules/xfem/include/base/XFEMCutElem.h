@@ -131,4 +131,6 @@ public:
                                    Point & normal,
                                    std::vector<Point> & intersectionPoints,
                                    MeshBase * displaced_mesh = nullptr) const = 0;
+
+  virtual Point getFragmentCenterPoint() = 0;
 };

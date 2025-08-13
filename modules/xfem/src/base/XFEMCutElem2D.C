@@ -437,6 +437,18 @@ XFEMCutElem2D::solveMomentFitting(unsigned int nen,
   delete[] b;
 }
 
+Point
+XFEMCutElem2D::getFragmentCenterPoint()
+{
+  // Get the coords for parial element nodes
+  Point cp;
+  EFAFragment2D * frag = _efa_elem2d.getFragment(0);
+  unsigned int nnd_pe = frag->numEdges();
+  for (unsigned int j = 0; j < nnd_pe; ++j)
+    cp += getNodeCoordinates(frag->getEdge(j)->getNode(0));
+  return cp / nnd_pe;
+}
+
 void
 XFEMCutElem2D::getIntersectionInfo(unsigned int plane_id,
                                    Point & normal,
