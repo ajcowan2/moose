@@ -42,6 +42,8 @@
     mesh_file = flat_interface_1d.e
     interface_velocity_uo = velocity
     heal_always = true
+    negative_id = 1
+    positive_id = 33
   []
 []
 
@@ -68,11 +70,14 @@
 [Constraints]
   [u_constraint]
     type = XFEMEqualValueAtInterface
+    use_penalty = true
     geometric_cut_userobject = 'cut_mesh'
     use_displaced_mesh = false
     variable = u
-    value = 2
+    value = 5.1
+    value_neighbor = 0
     alpha = 1e6
+    level_set_var = ls
   []
 []
 
@@ -109,11 +114,13 @@
     prop_values = 1
   []
   [diff_combined]
-    type = ADLevelSetBiMaterialReal
-    levelset_positive_base = 'A'
-    levelset_negative_base = 'B'
-    level_set_var = ls
+    type = ADXFEMCutSwitchingMaterialReal
+    cut_subdomain_ids = '1 33'
+    base_names = 'A B'
     prop_name = diffusion_coefficient
+    geometric_cut_userobject = cut_mesh
+    outputs = 'exodus'
+    output_properties = 'D'
   []
 []
 

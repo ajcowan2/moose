@@ -19,8 +19,8 @@
     type = SideSetsFromBoundingBoxGenerator
     input = gen
     block_id = 0
-    boundary_id_old = top
-    boundary_id_new = 10
+    included_boundaries = top
+    boundary_new = 10
     bottom_left = '0.0292 0.055 0'
     top_right = '0.0308 0.065 0'
   []

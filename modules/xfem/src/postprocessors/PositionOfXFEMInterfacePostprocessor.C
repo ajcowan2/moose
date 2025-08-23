@@ -43,7 +43,7 @@ PositionOfXFEMInterfacePostprocessor::initialize()
 }
 
 Real
-PositionOfXFEMInterfacePostprocessor::getValue()
+PositionOfXFEMInterfacePostprocessor::getValue() const
 {
   std::map<unsigned int, Point> points = _value_at_interface_uo->getQpPoint();
 

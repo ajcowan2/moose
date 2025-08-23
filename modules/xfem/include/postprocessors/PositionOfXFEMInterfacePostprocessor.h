@@ -29,7 +29,7 @@ public:
 
   virtual void execute() override {}
 
-  virtual Real getValue() override;
+  virtual Real getValue() const override;
 
 protected:
   /// Pointer to PointValueAtXFEMInterface object
