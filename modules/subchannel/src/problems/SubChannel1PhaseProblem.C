@@ -56,6 +56,7 @@ InputParameters
 SubChannel1PhaseProblem::validParams()
 {
   MooseEnum schemes("upwind downwind central_difference exponential", "central_difference");
+  MooseEnum gravity_direction("counter_flow co_flow none", "counter_flow");
   InputParameters params = ExternalProblem::validParams();
   params += PostprocessorInterface::validParams();
   params.addClassDescription("Base class of the subchannel solvers");
@@ -71,6 +72,8 @@ SubChannel1PhaseProblem::validParams()
   params.addParam<MooseEnum>("interpolation_scheme",
                              schemes,
                              "Interpolation scheme used for the method. Default is exponential");
+  params.addParam<MooseEnum>(
+      "gravity", gravity_direction, "Direction of gravity. Default is counter_flow");
   params.addParam<bool>(
       "implicit", false, "Boolean to define the use of explicit or implicit solution.");
   params.addParam<bool>(
@@ -121,6 +124,8 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
     _dtol(getParam<PetscReal>("dtol")),
     _maxit(getParam<PetscInt>("maxit")),
     _interpolation_scheme(getParam<MooseEnum>("interpolation_scheme")),
+    _gravity_direction(getParam<MooseEnum>("gravity")),
+    _dir_grav(computeGravityDir(_gravity_direction)),
     _implicit_bool(getParam<bool>("implicit")),
     _staggered_pressure_bool(getParam<bool>("staggered_pressure")),
     _segregated_bool(getParam<bool>("segregated")),
@@ -129,16 +134,15 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
     _deformation(getParam<bool>("deformation")),
     _fp(nullptr),
     _Tpin_soln(nullptr),
-    _q_prime_duct_soln(nullptr),
+    _duct_heat_flux_soln(nullptr),
     _Tduct_soln(nullptr)
 {
-  // Require only one process
-  if (n_processors() > 1)
-    mooseError("Cannot use more than one MPI process.");
+  // NOTE: The four quantities below are 0 for processor_id != 0
   _n_cells = _subchannel_mesh.getNumOfAxialCells();
   _n_gaps = _subchannel_mesh.getNumOfGapsPerLayer();
   _n_pins = _subchannel_mesh.getNumOfPins();
   _n_channels = _subchannel_mesh.getNumOfChannels();
+  // NOTE: The four quantities above are 0 for processor_id != 0
   _z_grid = _subchannel_mesh.getZGrid();
   _block_size = _n_cells / _n_blocks;
   // Turbulent crossflow (stuff that live on the gaps)
@@ -154,14 +158,6 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
   _Wij_residual_matrix.resize(_n_gaps, _block_size);
   _Wij_residual_matrix.zero();
   _converged = true;
-
-  _outer_channels = 0.0;
-  for (unsigned int i_ch = 0; i_ch < _n_channels; i_ch++)
-  {
-    auto subch_type = _subchannel_mesh.getSubchannelType(i_ch);
-    if (subch_type == EChannelType::EDGE || subch_type == EChannelType::CORNER)
-      _outer_channels += 1.0;
-  }
 
   // Mass conservation components
   LibmeshPetscCall(
@@ -241,6 +237,7 @@ void
 SubChannel1PhaseProblem::initialSetup()
 {
   ExternalProblem::initialSetup();
+
   _fp = &getUserObject<SinglePhaseFluidProperties>(getParam<UserObjectName>("fp"));
   _mdot_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::MASS_FLOW_RATE));
   _SumWij_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::SUM_CROSSFLOW));
@@ -262,8 +259,8 @@ SubChannel1PhaseProblem::initialSetup()
       std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::DISPLACEMENT));
   if (_duct_mesh_exist)
   {
-    _q_prime_duct_soln =
-        std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::DUCT_LINEAR_HEAT_RATE));
+    _duct_heat_flux_soln =
+        std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::DUCT_HEAT_FLUX));
     _Tduct_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::DUCT_TEMPERATURE));
   }
 }
@@ -454,7 +451,7 @@ SubChannel1PhaseProblem::computeSumWij(int iblock)
       LibmeshPetscCall(VecDuplicate(_amc_sys_mdot_rhs, &loc_prod));
       LibmeshPetscCall(VecDuplicate(_Wij_vec, &loc_Wij));
       LibmeshPetscCall(populateVectorFromDense<libMesh::DenseMatrix<Real>>(
-          loc_Wij, _Wij, first_node, last_node + 1, _n_gaps));
+          loc_Wij, _Wij, first_node, last_node, _n_gaps));
       LibmeshPetscCall(MatMult(_mc_sumWij_mat, loc_Wij, loc_prod));
       LibmeshPetscCall(populateSolutionChan<SolutionHandle>(
           loc_prod, *_SumWij_soln, first_node, last_node, _n_channels));
@@ -558,7 +555,7 @@ SubChannel1PhaseProblem::computeMdot(int iblock)
       PC pc;
       Vec sol;
       LibmeshPetscCall(VecDuplicate(_mc_axial_convection_rhs, &sol));
-      LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksploc));
+      LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksploc));
       LibmeshPetscCall(KSPSetOperators(ksploc, _mc_axial_convection_mat, _mc_axial_convection_mat));
       LibmeshPetscCall(KSPGetPC(ksploc, &pc));
       LibmeshPetscCall(PCSetType(pc, PCJACOBI));
@@ -649,7 +646,7 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         auto friction_term = (fi * dz / Dh_i + ki) * 0.5 *
                              (*_mdot_soln)(node_out)*std::abs((*_mdot_soln)(node_out)) /
                              (S * (*_rho_soln)(node_out));
-        auto gravity_term = _g_grav * (*_rho_soln)(node_out)*dz * S;
+        auto gravity_term = _dir_grav * _g_grav * (*_rho_soln)(node_out)*dz * S;
         auto DP = std::pow(S, -1.0) * (time_term + mass_term1 + mass_term2 + crossflow_term +
                                        turbulent_term + friction_term + gravity_term); // Pa
         _DP_soln->set(node_out, DP);
@@ -974,7 +971,7 @@ SubChannel1PhaseProblem::computeDP(int iblock)
             MatSetValues(_amc_friction_force_mat, 1, &row, 1, &col, &value, INSERT_VALUES));
 
         /// Gravity force
-        PetscScalar value_vec = -1.0 * _g_grav * rho_interp * dz * S_interp;
+        PetscScalar value_vec = _dir_grav * -1.0 * _g_grav * rho_interp * dz * S_interp;
         PetscInt row_vec = i_ch + _n_channels * iz_ind;
         LibmeshPetscCall(VecSetValues(_amc_gravity_rhs, 1, &row_vec, &value_vec, ADD_VALUES));
       }
@@ -1185,7 +1182,7 @@ SubChannel1PhaseProblem::computeP(int iblock)
         PC pc;
         Vec sol;
         LibmeshPetscCall(VecDuplicate(_amc_pressure_force_rhs, &sol));
-        LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksploc));
+        LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksploc));
         LibmeshPetscCall(KSPSetOperators(ksploc, _amc_pressure_force_mat, _amc_pressure_force_mat));
         LibmeshPetscCall(KSPGetPC(ksploc, &pc));
         LibmeshPetscCall(PCSetType(pc, PCJACOBI));
@@ -1280,7 +1277,7 @@ SubChannel1PhaseProblem::computeP(int iblock)
         PC pc;
         Vec sol;
         LibmeshPetscCall(VecDuplicate(_amc_pressure_force_rhs, &sol));
-        LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksploc));
+        LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksploc));
         LibmeshPetscCall(KSPSetOperators(ksploc, _amc_pressure_force_mat, _amc_pressure_force_mat));
         LibmeshPetscCall(KSPGetPC(ksploc, &pc));
         LibmeshPetscCall(PCSetType(pc, PCJACOBI));
@@ -1305,34 +1302,6 @@ SubChannel1PhaseProblem::computeP(int iblock)
         LibmeshPetscCall(VecDestroy(&sol));
       }
     }
-  }
-}
-
-Real
-SubChannel1PhaseProblem::computeAddedHeatDuct(unsigned int i_ch, unsigned int iz)
-{
-  if (_duct_mesh_exist)
-  {
-    auto subch_type = _subchannel_mesh.getSubchannelType(i_ch);
-    if (subch_type == EChannelType::EDGE || subch_type == EChannelType::CORNER)
-    {
-      auto dz = _z_grid[iz] - _z_grid[iz - 1];
-      auto * node_in_chan = _subchannel_mesh.getChannelNode(i_ch, iz - 1);
-      auto * node_out_chan = _subchannel_mesh.getChannelNode(i_ch, iz);
-      auto * node_in_duct = _subchannel_mesh.getDuctNodeFromChannel(node_in_chan);
-      auto * node_out_duct = _subchannel_mesh.getDuctNodeFromChannel(node_out_chan);
-      auto heat_rate_in = (*_q_prime_duct_soln)(node_in_duct);
-      auto heat_rate_out = (*_q_prime_duct_soln)(node_out_duct);
-      return 0.5 * (heat_rate_in + heat_rate_out) * dz / _outer_channels;
-    }
-    else
-    {
-      return 0.0;
-    }
-  }
-  else
-  {
-    return 0;
   }
 }
 
@@ -1404,9 +1373,9 @@ SubChannel1PhaseProblem::computeWijResidual(int iblock)
   if (!_implicit_bool)
   {
     unsigned int last_node = (iblock + 1) * _block_size;
-    unsigned int first_node = iblock * _block_size;
+    unsigned int first_node = iblock * _block_size + 1;
     const Real & pitch = _subchannel_mesh.getPitch();
-    for (unsigned int iz = first_node + 1; iz < last_node + 1; iz++)
+    for (unsigned int iz = first_node; iz < last_node + 1; iz++)
     {
       auto dz = _z_grid[iz] - _z_grid[iz - 1];
       for (unsigned int i_gap = 0; i_gap < _n_gaps; i_gap++)
@@ -1465,12 +1434,12 @@ SubChannel1PhaseProblem::computeWijResidual(int iblock)
     LibmeshPetscCall(MatZeroEntries(_cmc_sys_Wij_mat));
     LibmeshPetscCall(VecZeroEntries(_cmc_sys_Wij_rhs));
     unsigned int last_node = (iblock + 1) * _block_size;
-    unsigned int first_node = iblock * _block_size;
+    unsigned int first_node = iblock * _block_size + 1;
     const Real & pitch = _subchannel_mesh.getPitch();
-    for (unsigned int iz = first_node + 1; iz < last_node + 1; iz++)
+    for (unsigned int iz = first_node; iz < last_node + 1; iz++)
     {
       auto dz = _z_grid[iz] - _z_grid[iz - 1];
-      auto iz_ind = iz - first_node - 1;
+      auto iz_ind = iz - first_node;
       for (unsigned int i_gap = 0; i_gap < _n_gaps; i_gap++)
       {
         auto chans = _subchannel_mesh.getGapChannels(i_gap);
@@ -1528,7 +1497,7 @@ SubChannel1PhaseProblem::computeWijResidual(int iblock)
                             (*_mdot_soln)(node_in_j) / S_j_in / rho_j_in;
         auto term_out = Sij * rho_star * (Lij / dz) * mass_term_out / 2.0;
         auto term_in = Sij * rho_star * (Lij / dz) * mass_term_in / 2.0;
-        if (iz == first_node + 1)
+        if (iz == first_node)
         {
           PetscInt row_ad = i_gap + _n_gaps * iz_ind;
           PetscScalar value_ad = term_in * alpha * _Wij(i_gap, iz - 1);
@@ -1701,9 +1670,9 @@ SubChannel1PhaseProblem::computeWijResidual(int iblock)
       LibmeshPetscCall(VecAXPY(sol_holder_W, 1.0, sol_holder_P));
       PetscScalar * xx;
       LibmeshPetscCall(VecGetArray(sol_holder_W, &xx));
-      for (unsigned int iz = first_node + 1; iz < last_node + 1; iz++)
+      for (unsigned int iz = first_node; iz < last_node + 1; iz++)
       {
-        auto iz_ind = iz - first_node - 1;
+        auto iz_ind = iz - first_node;
         for (unsigned int i_gap = 0; i_gap < _n_gaps; i_gap++)
         {
           _Wij_residual_matrix(i_gap, iz - 1 - iblock * _block_size) = xx[iz_ind * _n_gaps + i_gap];
@@ -1815,11 +1784,11 @@ libMesh::DenseVector<Real>
 SubChannel1PhaseProblem::residualFunction(int iblock, libMesh::DenseVector<Real> solution)
 {
   unsigned int last_node = (iblock + 1) * _block_size;
-  unsigned int first_node = iblock * _block_size;
+  unsigned int first_node = iblock * _block_size + 1;
   libMesh::DenseVector<Real> Wij_residual_vector(_n_gaps * _block_size, 0.0);
   // Assign the solution to the cross-flow matrix
   int i = 0;
-  for (unsigned int iz = first_node + 1; iz < last_node + 1; iz++)
+  for (unsigned int iz = first_node; iz < last_node + 1; iz++)
   {
     for (unsigned int i_gap = 0; i_gap < _n_gaps; i_gap++)
     {
@@ -1862,15 +1831,11 @@ SubChannel1PhaseProblem::petscSnesSolver(int iblock,
   KSP ksp;
   PC pc;
   Vec x, r;
-  PetscMPIInt size;
   PetscScalar * xx;
 
   PetscFunctionBegin;
-  PetscCallMPI(MPI_Comm_size(PETSC_COMM_WORLD, &size));
-  if (size > 1)
-    SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_SUP, "Example is only for sequential runs");
-  LibmeshPetscCall(SNESCreate(PETSC_COMM_WORLD, &snes));
-  LibmeshPetscCall(VecCreate(PETSC_COMM_WORLD, &x));
+  LibmeshPetscCall(SNESCreate(PETSC_COMM_SELF, &snes));
+  LibmeshPetscCall(VecCreate(PETSC_COMM_SELF, &x));
   LibmeshPetscCall(VecSetSizes(x, PETSC_DECIDE, _block_size * _n_gaps));
   LibmeshPetscCall(VecSetFromOptions(x));
   LibmeshPetscCall(VecDuplicate(x, &r));
@@ -1906,6 +1871,36 @@ SubChannel1PhaseProblem::petscSnesSolver(int iblock,
   LibmeshPetscCall(VecDestroy(&r));
   LibmeshPetscCall(SNESDestroy(&snes));
   PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
+}
+
+Real
+SubChannel1PhaseProblem::computeAddedHeatDuct(unsigned int i_ch, unsigned int iz)
+{
+  mooseAssert(iz > 0, "Trapezoidal rule requires starting at index 1 at least");
+  if (_duct_mesh_exist)
+  {
+    auto subch_type = _subchannel_mesh.getSubchannelType(i_ch);
+    if (subch_type == EChannelType::EDGE || subch_type == EChannelType::CORNER)
+    {
+      auto dz = _z_grid[iz] - _z_grid[iz - 1];
+      auto * node_in_chan = _subchannel_mesh.getChannelNode(i_ch, iz - 1);
+      auto * node_out_chan = _subchannel_mesh.getChannelNode(i_ch, iz);
+      auto * node_in_duct = _subchannel_mesh.getDuctNodeFromChannel(node_in_chan);
+      auto * node_out_duct = _subchannel_mesh.getDuctNodeFromChannel(node_out_chan);
+      auto heat_rate_in = (*_duct_heat_flux_soln)(node_in_duct);
+      auto heat_rate_out = (*_duct_heat_flux_soln)(node_out_duct);
+      auto width = getSubChannelPeripheralDuctWidth(i_ch);
+      return 0.5 * (heat_rate_in + heat_rate_out) * dz * width;
+    }
+    else
+    {
+      return 0.0;
+    }
+  }
+  else
+  {
+    return 0.0;
+  }
 }
 
 PetscErrorCode
@@ -2313,14 +2308,14 @@ SubChannel1PhaseProblem::implicitPetscSolve(int iblock)
     _console << "Linear solver relaxed." << std::endl;
 
   // Creating nested matrices
-  LibmeshPetscCall(MatCreateNest(PETSC_COMM_WORLD, Q, NULL, Q, NULL, mat_array.data(), &A_nest));
-  LibmeshPetscCall(VecCreateNest(PETSC_COMM_WORLD, Q, NULL, vec_array.data(), &b_nest));
+  LibmeshPetscCall(MatCreateNest(PETSC_COMM_SELF, Q, NULL, Q, NULL, mat_array.data(), &A_nest));
+  LibmeshPetscCall(VecCreateNest(PETSC_COMM_SELF, Q, NULL, vec_array.data(), &b_nest));
   if (_verbose_subchannel)
     _console << "Nested system created." << std::endl;
 
   /// Setting up linear solver
   // Creating linear solver
-  LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksp));
+  LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksp));
   LibmeshPetscCall(KSPSetType(ksp, KSPFGMRES));
   // Setting KSP operators
   LibmeshPetscCall(KSPSetOperators(ksp, A_nest, A_nest));
@@ -2417,7 +2412,7 @@ SubChannel1PhaseProblem::implicitPetscSolve(int iblock)
       PC pc;
       Vec sol;
       LibmeshPetscCall(VecDuplicate(_hc_sys_h_rhs, &sol));
-      LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksploc));
+      LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksploc));
       LibmeshPetscCall(KSPSetOperators(ksploc, _hc_sys_h_mat, _hc_sys_h_mat));
       LibmeshPetscCall(KSPGetPC(ksploc, &pc));
       LibmeshPetscCall(PCSetType(pc, PCJACOBI));
@@ -2557,6 +2552,9 @@ SubChannel1PhaseProblem::externalSolve()
           _converged = false;
         }
         auto T_L2norm_old_block = _T_soln->L2norm();
+        // We are only computing quantities on rank 0
+        if (processor_id() > 0)
+          goto aux_close;
 
         if (_segregated_bool)
         {
@@ -2607,12 +2605,16 @@ SubChannel1PhaseProblem::externalSolve()
 
         // We must do a global assembly to make sure data is parallel consistent before we do things
         // like compute L2 norms
+      aux_close:
         _aux->solution().close();
 
         auto T_L2norm_new = _T_soln->L2norm();
         T_block_error =
             std::abs((T_L2norm_new - T_L2norm_old_block) / (T_L2norm_old_block + 1E-14));
         _console << "T_block_error: " << T_block_error << std::endl;
+
+        // All processes must have the same iteration count
+        comm().max(T_block_error);
       }
     }
     auto P_L2norm_new_axial = _P_soln->L2norm();
@@ -2670,7 +2672,7 @@ SubChannel1PhaseProblem::externalSolve()
   }
 
   /// Assigning temperatures to duct
-  if (_duct_mesh_exist)
+  if (_duct_mesh_exist && processor_id() == 0)
   {
     _console << "Commencing calculation of duct surface temperature " << std::endl;
     auto duct_nodes = _subchannel_mesh.getDuctNodes();
@@ -2685,16 +2687,18 @@ SubChannel1PhaseProblem::externalSolve()
       auto k = _fp->k_from_p_T((*_P_soln)(node_chan) + _P_out, (*_T_soln)(node_chan));
       auto cp = _fp->cp_from_p_T((*_P_soln)(node_chan) + _P_out, (*_T_soln)(node_chan));
       auto Pr = (*_mu_soln)(node_chan)*cp / k;
+      /// FIXME - model assumes HTC calculation via Dittus-Boelter correlation
       auto Nu = 0.023 * std::pow(Re, 0.8) * std::pow(Pr, 0.4);
       auto hw = Nu * k / Dh_i;
-      auto T_chan = (*_q_prime_duct_soln)(dn) / (_subchannel_mesh.getPinDiameter() * M_PI * hw) +
-                    (*_T_soln)(node_chan);
+      auto T_chan = (*_duct_heat_flux_soln)(dn) / hw + (*_T_soln)(node_chan);
       _Tduct_soln->set(dn, T_chan);
     }
   }
   _aux->solution().close();
   _aux->update();
 
+  if (processor_id() != 0)
+    return;
   Real power_in = 0.0;
   Real power_out = 0.0;
   Real Total_surface_area = 0.0;

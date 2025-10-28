@@ -13,11 +13,13 @@
 #include "Executioner.h"
 #include "MooseMesh.h"
 #include "NonlinearSystem.h"
+#include "AuxiliarySystem.h"
 #include "AllLocalDofIndicesThread.h"
 #include "Console.h"
 #include "EigenExecutionerBase.h"
 #include "Convergence.h"
 #include "ConvergenceIterationTypes.h"
+#include "MooseUtils.h"
 
 InputParameters
 FixedPointSolve::fixedPointDefaultConvergenceParams()
@@ -190,6 +192,8 @@ void
 FixedPointSolve::initialSetup()
 {
   SolveObject::initialSetup();
+
+  allocateStorage(true);
 
   if (_has_fixed_point_its)
   {
@@ -420,6 +424,10 @@ FixedPointSolve::solveStep(const std::set<dof_id_type> & transformed_dofs)
   // Save the current values of variables and postprocessors, before the solve
   saveAllValues(true);
 
+  // Save the previous fixed point iteration solution and aux variables
+  _solver_sys.copyPreviousFixedPointSolutions();
+  _aux.copyPreviousFixedPointSolutions();
+
   if (_has_fixed_point_its)
     _console << COLOR_MAGENTA << "\nMain app solve:" << COLOR_DEFAULT << std::endl;
   if (!_inner_solve->solve())
@@ -439,7 +447,7 @@ FixedPointSolve::solveStep(const std::set<dof_id_type> & transformed_dofs)
 
   if (_problem.haveXFEM() && (_xfem_update_count < _max_xfem_update) && _problem.updateMeshXFEM())
   {
-    _console << "\nXFEM modified mesh, repeating step" << std::endl;
+    _console << "\nRepeating step due to XFEM mesh modification" << std::endl;
     _xfem_repeat_step = true;
     ++_xfem_update_count;
   }
@@ -449,7 +457,6 @@ FixedPointSolve::solveStep(const std::set<dof_id_type> & transformed_dofs)
     {
       _xfem_repeat_step = false;
       _xfem_update_count = 0;
-      _console << "\nXFEM did not modify mesh, continuing" << std::endl;
     }
 
     _problem.onTimestepEnd();
@@ -551,4 +558,13 @@ FixedPointSolve::autoAdvance() const
     auto_advance = _auto_advance_user_value;
 
   return auto_advance;
+}
+
+bool
+FixedPointSolve::performingRelaxation(const bool primary) const
+{
+  if (primary)
+    return !MooseUtils::absoluteFuzzyEqual(_relax_factor, 1.0);
+  else
+    return !MooseUtils::absoluteFuzzyEqual(_secondary_relaxation_factor, 1.0);
 }

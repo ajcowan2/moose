@@ -227,7 +227,7 @@ MultiApp::validParams()
                         "final auxiliary solution from the previous coupling iteration"
                         "and re-uses it as the initial guess for the next coupling iteration");
   params.addParam<bool>(
-      "no_backup_and_restore",
+      "no_restore",
       false,
       "True to turn off restore for this multiapp. This is useful when doing steady-state "
       "Picard iterations where we want to use the solution of previous Picard iteration as the "
@@ -237,7 +237,6 @@ MultiApp::validParams()
       10,
       "Integer set by user that will stop the simulation if the multiapp level "
       "exceeds it. Useful for preventing infinite loops with multiapp simulations");
-  params.deprecateParam("no_backup_and_restore", "no_restore", "01/01/2025");
 
   params.addDeprecatedParam<bool>("clone_master_mesh",
                                   false,
@@ -246,7 +245,6 @@ MultiApp::validParams()
   params.addParam<bool>(
       "clone_parent_mesh", false, "True to clone parent app mesh and use it for this MultiApp.");
 
-  params.addPrivateParam<std::shared_ptr<CommandLine>>("_command_line");
   params.addPrivateParam<bool>("use_positions", true);
   params.declareControllable("enable");
   params.declareControllable("cli_args", {EXEC_PRE_MULTIAPP_SETUP});
@@ -1135,6 +1133,10 @@ MultiApp::parentOutputPositionChanged()
 void
 MultiApp::createApp(unsigned int i, Real start_time)
 {
+  // Delete the old app if we're resetting
+  if (_apps[i])
+    _apps[i].reset();
+
   // Define the app name
   const std::string multiapp_name = getMultiAppName(name(), _first_local_app + i, _total_num_apps);
   std::string full_name;
@@ -1158,7 +1160,6 @@ MultiApp::createApp(unsigned int i, Real start_time)
   // as used within the parent app (_app)
   auto app_cli = _app.commandLine()->initSubAppCommandLine(name(), multiapp_name, input_cli_args);
   app_cli->parse();
-  app_params.set<std::shared_ptr<CommandLine>>("_command_line") = std::move(app_cli);
 
   if (_fe_problem.verboseMultiApps())
     _console << COLOR_CYAN << "Creating MultiApp " << name() << " of type " << _app_type
@@ -1172,8 +1173,7 @@ MultiApp::createApp(unsigned int i, Real start_time)
   app_params.set<std::shared_ptr<mfem::Device>>("_mfem_device") =
       _app.getMFEMDevice(Moose::PassKey<MultiApp>());
   const auto & mfem_device_set = _app.getMFEMDevices(Moose::PassKey<MultiApp>());
-  app_params.set<std::vector<std::string>>("_mfem_devices") =
-      std::vector<std::string>(mfem_device_set.begin(), mfem_device_set.end());
+  app_params.set<std::set<std::string>>("_mfem_devices") = mfem_device_set;
 #endif
   if (getParam<bool>("clone_master_mesh") || getParam<bool>("clone_parent_mesh"))
   {
@@ -1192,32 +1192,31 @@ MultiApp::createApp(unsigned int i, Real start_time)
 
   // create new parser tree for the application and parse
   auto parser = std::make_unique<Parser>(input_file);
+  parser->setCommandLineParams(app_cli->buildHitParams());
+  parser->parse();
 
-  if (input_file.size())
-  {
-    parser->parse();
-    const auto & app_type = parser->getAppType();
-    if (app_type.empty() && _app_type.empty())
-      mooseWarning("The application type is not specified for ",
-                   full_name,
-                   ". Please use [Application] block to specify the application type.");
-    if (!app_type.empty() && app_type != _app_type &&
-        !AppFactory::instance().isRegistered(app_type))
-      mooseError("In the ",
+  // Checks on app type
+  const auto & app_type = parser->getAppType();
+  if (app_type.empty() && _app_type.empty())
+    mooseWarning("The application type is not specified for ",
                  full_name,
-                 ", '",
-                 app_type,
-                 "' is not a registered application. The registered application is named: '",
-                 _app_type,
-                 "'. Please double check the [Application] block to make sure the correct "
-                 "application is provided. \n");
-  }
+                 ". Please use [Application] block to specify the application type.");
+  if (!app_type.empty() && app_type != _app_type && !AppFactory::instance().isRegistered(app_type))
+    mooseError("In the ",
+               full_name,
+               ", '",
+               app_type,
+               "' is not a registered application. The registered application is named: '",
+               _app_type,
+               "'. Please double check the [Application] block to make sure the correct "
+               "application is provided. \n");
 
   if (parser->getAppType().empty())
     parser->setAppType(_app_type);
 
   app_params.set<std::shared_ptr<Parser>>("_parser") = std::move(parser);
-  _apps[i] = AppFactory::instance().createShared(_app_type, full_name, app_params, _my_comm);
+  app_params.set<std::shared_ptr<CommandLine>>("_command_line") = std::move(app_cli);
+  _apps[i] = AppFactory::instance().create(_app_type, full_name, app_params, _my_comm);
   auto & app = _apps[i];
 
   app->setGlobalTimeOffset(start_time);

@@ -28,6 +28,7 @@
     type = MFEMVectorFESpace
     fec_type = L2
     fec_order = CONSTANT
+    basis = GaussLegendre
   []
 []
 
@@ -66,22 +67,22 @@
   [h1_vector_ic]
     type = MFEMVectorIC
     variable = h1_vector
-    coefficient = external_vector_field
+    vector_coefficient = external_vector_field
   []
   [l2_vector_ic]
     type = MFEMVectorIC
     variable = l2_vector
-    coefficient = external_vector_field
+    vector_coefficient = external_vector_field
   []
   [nd_vector_ic]
     type = MFEMVectorIC
     variable = nd_vector
-    coefficient = external_vector_field
+    vector_coefficient = external_vector_field
   []
   [rt_vector_ic]
     type = MFEMVectorIC
     variable = rt_vector
-    coefficient = external_vector_field
+    vector_coefficient = external_vector_field
   []
 []
 

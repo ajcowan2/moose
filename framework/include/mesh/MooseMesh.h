@@ -9,6 +9,10 @@
 
 #pragma once
 
+#ifdef MOOSE_KOKKOS_ENABLED
+#include "KokkosMesh.h"
+#endif
+
 #include "MooseObject.h"
 #include "BndNode.h"
 #include "BndElement.h"
@@ -274,16 +278,8 @@ public:
   void buildNodeListFromSideList();
 
   /**
-   * Calls BoundaryInfo::build_side_list().
-   * Fills in the three passed vectors with list logical (element, side, id) tuples.
-   * This function will eventually be deprecated in favor of the one below, which
-   * returns a single std::vector of (elem-id, side-id, bc-id) tuples instead.
-   */
-  void buildSideList(std::vector<dof_id_type> & el,
-                     std::vector<unsigned short int> & sl,
-                     std::vector<boundary_id_type> & il);
-  /**
-   * As above, but uses the non-deprecated std::tuple interface.
+   * Calls BoundaryInfo::build_side_list(), returns a std::vector of
+   * (elem-id, side-id, bc-id) tuples.
    */
   std::vector<std::tuple<dof_id_type, unsigned short int, boundary_id_type>> buildSideList();
 
@@ -664,6 +660,13 @@ public:
   const MeshBase * getMeshPtr() const;
 
   /**
+   * Accessor for Kokkos mesh object.
+   */
+#ifdef MOOSE_KOKKOS_ENABLED
+  const Moose::Kokkos::Mesh * getKokkosMesh() const { return _kokkos_mesh.get(); }
+#endif
+
+  /**
    * Calls print_info() on the underlying Mesh.
    */
   void printInfo(std::ostream & os = libMesh::out, const unsigned int verbosity = 0) const;
@@ -723,7 +726,7 @@ public:
   /**
    * Get the associated BoundaryID for the boundary name.
    *
-   * @return param boundary_name The name of the boundary.
+   * @param boundary_name The name of the boundary.
    * @return the boundary id from the passed boundary name.
    */
   BoundaryID getBoundaryID(const BoundaryName & boundary_name) const;
@@ -731,7 +734,7 @@ public:
   /**
    * Get the associated BoundaryID for the boundary names that are passed in.
    *
-   * @return param boundary_name The names of the boundaries.
+   * @param boundary_name The names of the boundaries.
    * @return the boundary ids from the passed boundary names.
    */
   std::vector<BoundaryID> getBoundaryIDs(const std::vector<BoundaryName> & boundary_name,
@@ -788,7 +791,7 @@ public:
   /**
    * Return the name of the boundary given the id.
    */
-  const std::string & getBoundaryName(BoundaryID boundary_id);
+  const std::string & getBoundaryName(BoundaryID boundary_id) const;
 
   /**
    * This routine builds a multimap of boundary ids to matching boundary ids across all periodic
@@ -1140,6 +1143,21 @@ public:
   std::set<dof_id_type> getElemIDsOnBlocks(unsigned int elem_id_index,
                                            const std::set<SubdomainID> & blks) const;
 
+  /**
+   * Get the maximum number of sides per element
+   */
+  unsigned int getMaxSidesPerElem() const { return _max_sides_per_elem; }
+
+  /**
+   * Get the maximum number of nodes per element
+   */
+  unsigned int getMaxNodesPerElem() const { return _max_nodes_per_elem; }
+
+  /**
+   * Get the maximum number of nodes per side
+   */
+  unsigned int getMaxNodesPerSide() const { return _max_nodes_per_side; }
+
   std::unordered_map<dof_id_type, std::set<dof_id_type>>
   getElemIDMapping(const std::string & from_id_name, const std::string & to_id_name) const;
 
@@ -1431,6 +1449,11 @@ protected:
 
   /// Pointer to underlying libMesh mesh object
   std::unique_ptr<libMesh::MeshBase> _mesh;
+
+  /// Pointer to Kokkos mesh object
+#ifdef MOOSE_KOKKOS_ENABLED
+  std::unique_ptr<Moose::Kokkos::Mesh> _kokkos_mesh;
+#endif
 
   /// The partitioner used on this mesh
   MooseEnum _partitioner_name;
@@ -1844,6 +1867,18 @@ private:
   std::vector<dof_id_type> _min_ids;
   /// Flags to indicate whether or not any two extra element integers are the same
   std::vector<std::vector<bool>> _id_identical_flag;
+
+  /// The maximum number of sides per element
+  unsigned int _max_sides_per_elem;
+
+  /// The maximum number of nodes per element
+  unsigned int _max_nodes_per_elem;
+
+  /// The maximum number of nodes per side
+  unsigned int _max_nodes_per_side;
+
+  /// Compute the maximum numbers per element and side
+  void computeMaxPerElemAndSide();
 
   /// Whether this mesh is displaced
   bool _is_displaced;

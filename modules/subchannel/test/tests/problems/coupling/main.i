@@ -10,7 +10,7 @@ heated_length = 1.0
     n_cells = 10
     pitch = 0.014605
     pin_diameter = 0.012065
-    gap = 0.0015875
+    side_gap = 0.0015875
     heated_length = ${heated_length}
     spacer_z = '0.0'
     spacer_k = '0.0'
@@ -215,11 +215,13 @@ heated_length = 1.0
     execute_on = 'timestep_end'
     positions = '0   0   0 '
     bounding_box_padding = '0 0 0.01'
+    max_procs_per_app = 1
   []
   [viz]
     type = FullSolveMultiApp
     input_files = '3d.i'
     execute_on = 'timestep_end'
+    max_procs_per_app = 1
   []
 []
 

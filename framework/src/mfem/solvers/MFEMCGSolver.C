@@ -38,8 +38,7 @@ MFEMCGSolver::MFEMCGSolver(const InputParameters & parameters) : MFEMSolverBase(
 void
 MFEMCGSolver::constructSolver(const InputParameters &)
 {
-  auto solver =
-      std::make_unique<mfem::CGSolver>(getMFEMProblem().mesh().getMFEMParMesh().GetComm());
+  auto solver = std::make_unique<mfem::CGSolver>(getMFEMProblem().getComm());
   solver->SetRelTol(getParam<mfem::real_t>("l_tol"));
   solver->SetAbsTol(getParam<mfem::real_t>("l_abs_tol"));
   solver->SetMaxIter(getParam<int>("l_max_its"));
@@ -61,10 +60,7 @@ MFEMCGSolver::updateSolver(mfem::ParBilinearForm & a, mfem::Array<int> & tdofs)
   }
   else if (_lor)
   {
-    if (!checkSpectralEquivalence(a))
-      mooseError("Low-Order-Refined solver requires the FESpace closed_basis to be GaussLobatto "
-                 "and the open-basis to be IntegratedGLL for ND and RT elements.");
-
+    checkSpectralEquivalence(a);
     auto lor_solver = new mfem::LORSolver<mfem::CGSolver>(a, tdofs);
     lor_solver->GetSolver().SetRelTol(getParam<mfem::real_t>("l_tol"));
     lor_solver->GetSolver().SetAbsTol(getParam<mfem::real_t>("l_abs_tol"));

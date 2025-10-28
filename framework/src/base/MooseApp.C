@@ -55,6 +55,8 @@
 #include "StringInputStream.h"
 #include "MooseMain.h"
 #include "FEProblemBase.h"
+#include "Parser.h"
+#include "CSGBase.h"
 
 // Regular expression includes
 #include "pcrecpp.h"
@@ -88,8 +90,6 @@
 
 using namespace libMesh;
 
-#define QUOTE(macro) stringifyName(macro)
-
 void
 MooseApp::addAppParam(InputParameters & params)
 {
@@ -107,7 +107,7 @@ MooseApp::addInputParam(InputParameters & params)
 InputParameters
 MooseApp::validParams()
 {
-  InputParameters params = emptyInputParameters();
+  InputParameters params = MooseBase::validParams();
 
   MooseApp::addAppParam(params);
   MooseApp::addInputParam(params);
@@ -119,7 +119,12 @@ MooseApp::validParams()
       "--mesh-only <optional path>",
       "",
       "Build and output the mesh only (Default: \"<input_file_name>_in.e\")");
-
+  params.addOptionalValuedCommandLineParam<std::string>(
+      "csg_only",
+      "--csg-only <optional path>",
+      "",
+      "Setup and output the input mesh in CSG format only (Default: "
+      "\"<input_file_name>_out_csg.json\")");
   params.addCommandLineParam<bool>(
       "show_input", "--show-input", "Shows the parsed input file before running the simulation");
   params.setGlobalCommandLineParam("show_input");
@@ -392,10 +397,6 @@ MooseApp::validParams()
                                    false,
                                    "Show registered data paths for searching in the header");
 
-  params.addPrivateParam<std::string>("_app_name"); // the name passed to AppFactory::create
-  params.addPrivateParam<std::string>("_type");
-  params.addPrivateParam<int>("_argc");
-  params.addPrivateParam<char **>("_argv");
   params.addPrivateParam<std::shared_ptr<CommandLine>>("_command_line");
   params.addPrivateParam<std::shared_ptr<Parallel::Communicator>>("_comm");
   params.addPrivateParam<unsigned int>("_multiapp_level");
@@ -407,7 +408,7 @@ MooseApp::validParams()
   params.addPrivateParam<std::shared_ptr<Parser>>("_parser");
 #ifdef MOOSE_MFEM_ENABLED
   params.addPrivateParam<std::shared_ptr<mfem::Device>>("_mfem_device");
-  params.addPrivateParam<std::vector<std::string>>("_mfem_devices");
+  params.addPrivateParam<std::set<std::string>>("_mfem_devices");
 #endif
 
   params.addParam<bool>(
@@ -434,12 +435,13 @@ MooseApp::validParams()
 
   MooseApp::addAppParam(params);
 
+  params.registerBase("Application");
+
   return params;
 }
 
 MooseApp::MooseApp(const InputParameters & parameters)
-  : ConsoleStreamInterface(*this),
-    PerfGraphInterface(*this, "MooseApp"),
+  : PerfGraphInterface(*this, "MooseApp"),
     ParallelObject(*parameters.get<std::shared_ptr<Parallel::Communicator>>(
         "_comm")), // Can't call getParam() before pars is set
     // The use of AppFactory::getAppParams() is atrocious. However, a long time ago
@@ -448,11 +450,7 @@ MooseApp::MooseApp(const InputParameters & parameters)
     // actually a copy of the ones built by the factory. Because we have unique
     // application names, this allows us to reference (using _pars and MooseBase)
     // the actual const parameters that the AppFactory made for this application
-    MooseBase(AppFactory::instance().getAppParams(parameters).get<std::string>("_type"),
-              AppFactory::instance().getAppParams(parameters).get<std::string>("_app_name"),
-              *this,
-              AppFactory::instance().getAppParams(parameters)),
-    _pars(AppFactory::instance().getAppParams(parameters)),
+    MooseBase(*this, AppFactory::instance().getAppParams(parameters)),
     _comm(getParam<std::shared_ptr<Parallel::Communicator>>("_comm")),
     _file_base_set_by_user(false),
     _output_position_set(false),
@@ -463,13 +461,14 @@ MooseApp::MooseApp(const InputParameters & parameters)
     _action_factory(*this),
     _action_warehouse(*this, _syntax, _action_factory),
     _output_warehouse(*this),
-    _parser(_pars.get<std::shared_ptr<Parser>>("_parser")),
-    _builder(*this, _action_warehouse, _parser),
+    _parser(getCheckedPointerParam<std::shared_ptr<Parser>>("_parser")),
+    _command_line(getCheckedPointerParam<std::shared_ptr<CommandLine>>("_command_line")),
+    _builder(*this, _action_warehouse, *_parser),
     _restartable_data(libMesh::n_threads()),
     _perf_graph(createRecoverablePerfGraph()),
     _solution_invalidity(createRecoverableSolutionInvalidity()),
     _rank_map(*_comm, _perf_graph),
-    _use_executor(_pars.get<bool>("use_executor")),
+    _use_executor(getParam<bool>("use_executor")),
     _null_executor(NULL),
     _use_nonlinear(true),
     _use_eigen_value(false),
@@ -484,8 +483,8 @@ MooseApp::MooseApp(const InputParameters & parameters)
     _recover(false),
     _restart(false),
     _split_mesh(false),
-    _use_split(_pars.get<bool>("use_split")),
-    _force_restart(_pars.get<bool>("force_restart")),
+    _use_split(getParam<bool>("use_split")),
+    _force_restart(getParam<bool>("force_restart")),
 #ifdef DEBUG
     _trap_fpe(true),
 #else
@@ -494,15 +493,15 @@ MooseApp::MooseApp(const InputParameters & parameters)
     _test_checkpoint_half_transient(parameters.get<bool>("test_checkpoint_half_transient")),
     _test_restep(parameters.get<bool>("test_restep")),
     _check_input(getParam<bool>("check_input")),
-    _multiapp_level(isParamValid("_multiapp_level") ? _pars.get<unsigned int>("_multiapp_level")
+    _multiapp_level(isParamValid("_multiapp_level") ? getParam<unsigned int>("_multiapp_level")
                                                     : 0),
-    _multiapp_number(isParamValid("_multiapp_number") ? _pars.get<unsigned int>("_multiapp_number")
+    _multiapp_number(isParamValid("_multiapp_number") ? getParam<unsigned int>("_multiapp_number")
                                                       : 0),
-    _use_master_mesh(_pars.get<bool>("_use_master_mesh")),
-    _master_mesh(isParamValid("_master_mesh") ? _pars.get<const MooseMesh *>("_master_mesh")
+    _use_master_mesh(getParam<bool>("_use_master_mesh")),
+    _master_mesh(isParamValid("_master_mesh") ? getParam<const MooseMesh *>("_master_mesh")
                                               : nullptr),
     _master_displaced_mesh(isParamValid("_master_displaced_mesh")
-                               ? _pars.get<const MooseMesh *>("_master_displaced_mesh")
+                               ? getParam<const MooseMesh *>("_master_displaced_mesh")
                                : nullptr),
     _mesh_generator_system(*this),
     _chain_control_system(*this),
@@ -520,11 +519,8 @@ MooseApp::MooseApp(const InputParameters & parameters)
     _mfem_device(isParamValid("_mfem_device")
                      ? getParam<std::shared_ptr<mfem::Device>>("_mfem_device")
                      : nullptr),
-    _mfem_devices(
-        isParamValid("_mfem_devices")
-            ? std::set<std::string>(getParam<std::vector<std::string>>("_mfem_devices").begin(),
-                                    getParam<std::vector<std::string>>("_mfem_devices").end())
-            : std::set<std::string>{})
+    _mfem_devices(isParamValid("_mfem_devices") ? getParam<std::set<std::string>>("_mfem_devices")
+                                                : std::set<std::string>{})
 #endif
 {
   if (&parameters != &_pars)
@@ -558,8 +554,11 @@ MooseApp::MooseApp(const InputParameters & parameters)
     Moose::show_trace = show_trace;
   }
 
+  mooseAssert(_command_line->hasParsed(), "Command line has not parsed");
+  mooseAssert(_parser->queryRoot() && _parser->queryCommandLineRoot(), "Parser has not parsed");
+
   // Set the TIMPI sync type via --timpi-sync
-  const auto & timpi_sync = _pars.get<std::string>("timpi_sync");
+  const auto & timpi_sync = getParam<std::string>("timpi_sync");
   const_cast<Parallel::Communicator &>(comm()).sync_type(timpi_sync);
 
 #ifdef HAVE_GPERFTOOLS
@@ -674,18 +673,6 @@ MooseApp::MooseApp(const InputParameters & parameters)
 
   _perf_graph.enableLivePrint();
 
-  if (isParamValid("_argc") && isParamValid("_argv"))
-  {
-    int argc = getParam<int>("_argc");
-    char ** argv = getParam<char **>("_argv");
-
-    _sys_info = std::make_unique<SystemInfo>(argc, argv);
-  }
-  if (isParamValid("_command_line"))
-    _command_line = getParam<std::shared_ptr<CommandLine>>("_command_line");
-  else
-    mooseError("Valid CommandLine object required");
-
   if (_check_input && isParamSetByUser("recover"))
     mooseError("Cannot run --check-input with --recover. Recover files might not exist");
 
@@ -783,6 +770,12 @@ MooseApp::MooseApp(const InputParameters & parameters)
   registerCapabilities();
 
   Moose::out << std::flush;
+
+#ifdef MOOSE_KOKKOS_ENABLED
+#ifdef MOOSE_ENABLE_KOKKOS_GPU
+  queryKokkosGPUs();
+#endif
+#endif
 }
 
 std::optional<MooseEnum>
@@ -904,6 +897,28 @@ MooseApp::registerCapabilities()
     haveCapability("cuda", doc);
 #else
     missingCapability("cuda", doc, "Add the CUDA bin directory to your path and rebuild PETSc.");
+#endif
+  }
+
+  {
+    const auto doc = "Kokkos performance portability programming ecosystem";
+#ifdef MOOSE_KOKKOS_ENABLED
+    haveCapability("kokkos", doc);
+#else
+    missingCapability("kokkos",
+                      doc,
+                      "Rebuild PETSc with Kokkos support and libMesh. Then, reconfigure MOOSE with "
+                      "--with-kokkos.");
+#endif
+  }
+
+  {
+    const auto doc = "Kokkos support for PETSc";
+#ifdef PETSC_HAVE_KOKKOS
+    haveCapability("petsc_kokkos", doc);
+#else
+    missingCapability(
+        "kokkos", doc, "Rebuild PETSc with Kokkos support, then rebuild libMesh and MOOSE.");
 #endif
   }
 
@@ -1083,6 +1098,16 @@ MooseApp::registerCapabilities()
 #endif
   }
 
+  {
+    const auto doc = "sfcurves library for space filling curves (required by geometric "
+                     "partitioners such as SFCurves, Hilbert and Morton -  not LGPL compatible)";
+#ifdef LIBMESH_HAVE_SFCURVES
+    haveCapability("sfcurves", doc);
+#else
+    libmeshMissingCapability("sfcurves", doc, "--disable-sfc");
+#endif
+  }
+
 #ifdef LIBMESH_HAVE_FPARSER
 #ifdef LIBMESH_HAVE_FPARSER_JIT
   addCapability("fparser", "jit", "FParser enabled with just in time compilation support.");
@@ -1158,7 +1183,9 @@ MooseApp::registerCapabilities()
   // compiler
   {
     const auto doc = "Compiler used to build the MOOSE framework.";
-#if defined(__clang__)
+#if defined(__INTEL_LLVM_COMPILER)
+    addCapability("compiler", "intel", doc);
+#elif defined(__clang__)
     addCapability("compiler", "clang", doc);
 #elif defined(__GNUC__) || defined(__GNUG__)
     addCapability("compiler", "gcc", doc);
@@ -1208,13 +1235,19 @@ MooseApp::~MooseApp()
   // dlclose an option
   _restartable_data.clear();
 
-  // Remove this app's parameters from the AppFactory
+  // Remove this app's parameters from the AppFactory. This allows
+  // for creating an app with this name again in the same execution,
+  // which needs to be done when resetting applications in MultiApp
   AppFactory::instance().clearAppParams(parameters(), {});
 
 #ifdef LIBMESH_HAVE_DLOPEN
   // Close any open dynamic libraries
   for (const auto & lib_pair : _lib_handles)
     dlclose(lib_pair.second.library_handle);
+#endif
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  deallocateKokkosMemoryPool();
 #endif
 }
 
@@ -1518,11 +1551,6 @@ MooseApp::setupOptions()
         _restart_recover_base = recover;
     }
 
-    // In the event that we've parsed once before already in MooseMain, we
-    // won't need to parse again
-    if (!_parser->root())
-      _parser->parse();
-
     _builder.build();
 
     if (isParamValid("required_capabilities"))
@@ -1564,8 +1592,32 @@ MooseApp::setupOptions()
 
     // The following parameters set the final task and so are mutually exclusive.
     const std::vector<std::string> final_task_params = {
-        "mesh_only", "split_mesh", "parse_neml2_only"};
-    if (isExclusiveParamSetByUser(final_task_params, "mesh_only"))
+        "csg_only", "mesh_only", "split_mesh", "parse_neml2_only"};
+    if (isExclusiveParamSetByUser(final_task_params, "csg_only"))
+    {
+      // Error checking on incompatible command line options
+      if (_distributed_mesh_on_command_line)
+        mooseError("--csg-only cannot be used in conjunction with --distributed-mesh");
+      const bool has_mesh_split = isParamSetByUser("split_file") || _use_split;
+      if (has_mesh_split)
+        mooseError("--csg-only is not compatible with any mesh splitting options");
+      if (isParamSetByUser("refinements"))
+        mooseError("--csg-only cannot be used in conjunction with -r refinements option");
+      if (!isUltimateMaster())
+        mooseError("--csg-only option cannot be used as a Subapp");
+      if (_recover)
+        mooseError("--csg-only option cannot be used in recovery mode");
+
+      _syntax.registerTaskName("execute_csg_generators", true);
+      _syntax.addDependency("execute_csg_generators", "execute_mesh_generators");
+      _syntax.addDependency("recover_meta_data", "execute_csg_generators");
+
+      _syntax.registerTaskName("csg_only", true);
+      _syntax.addDependency("csg_only", "recover_meta_data");
+      _syntax.addDependency("set_mesh_base", "csg_only");
+      _action_warehouse.setFinalTask("csg_only");
+    }
+    else if (isExclusiveParamSetByUser(final_task_params, "mesh_only"))
     {
       // If we are looking to just check the input, there is no need to
       // call MeshOnlyAction and generate a mesh
@@ -1658,6 +1710,12 @@ MooseApp::setupOptions()
     _exit_code = 1;
   }
 
+#ifdef MOOSE_KOKKOS_ENABLED
+  for (auto & action : _action_warehouse.allActionBlocks())
+    if (action->isParamValid("_kokkos_action"))
+      _has_kokkos_objects = true;
+#endif
+
   Moose::out << std::flush;
 }
 
@@ -1711,7 +1769,12 @@ MooseApp::runInputFile()
 
   _action_warehouse.executeAllActions();
 
-  if (isParamSetByUser("mesh_only"))
+  if (isParamSetByUser("csg_only"))
+  {
+    _early_exit_param = "--csg-only";
+    _ready_to_exit = true;
+  }
+  else if (isParamSetByUser("mesh_only"))
   {
     _early_exit_param = "--mesh-only";
     _ready_to_exit = true;
@@ -1993,11 +2056,17 @@ MooseApp::addExecutorParams(const std::string & type,
   _executor_params[name] = std::make_pair(type, std::make_unique<InputParameters>(params));
 }
 
-Parser &
-MooseApp::parser()
+const Parser &
+MooseApp::parser() const
 {
   mooseAssert(_parser, "Not set");
   return *_parser;
+}
+
+Parser &
+MooseApp::parser()
+{
+  return const_cast<Parser &>(std::as_const(*this).parser());
 }
 
 void
@@ -2177,6 +2246,16 @@ MooseApp::run()
     TIME_SECTION("setup", 2, "Setting Up");
     setupOptions();
     runInputFile();
+  }
+  catch (Parser::Error & err)
+  {
+    mooseAssert(_parser->getThrowOnError(), "Should be true");
+    throw err;
+  }
+  catch (MooseRuntimeError & err)
+  {
+    mooseAssert(Moose::_throw_on_error, "Should be true");
+    throw err;
   }
   catch (std::exception & err)
   {
@@ -2364,9 +2443,9 @@ MooseApp::checkReservedCapability(const std::string & capability)
   static const std::set<std::string> reserved{
       "scale_refine", "valgrind", "recover", "heavy", "mpi_procs", "num_threads", "compute_device"};
   if (reserved.count(capability))
-    mooseError("MooseApp::addCapability(): The capability \"",
-               capability,
-               "\" is reserved and may not be registered by an application.");
+    ::mooseError("MooseApp::addCapability(): The capability \"",
+                 capability,
+                 "\" is reserved and may not be registered by an application.");
 }
 
 void

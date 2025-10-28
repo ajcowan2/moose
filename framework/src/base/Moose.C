@@ -22,6 +22,8 @@
 #include "MooseSyntax.h"
 #include "ExecFlagRegistry.h"
 
+#include "hit/parse.h"
+
 #include <unistd.h>
 
 const ExecFlagType EXEC_NONE = registerDefaultExecFlag("NONE");
@@ -124,17 +126,30 @@ addActionTypes(Syntax & syntax)
   appendMooseObjectTask  ("add_kernel",                   EigenKernel);
   appendMooseObjectTask  ("add_kernel",                   VectorKernel);
   appendMooseObjectTask  ("add_kernel",                   ArrayKernel);
+#ifdef MOOSE_KOKKOS_ENABLED
+  appendMooseObjectTask  ("add_kernel",                   KokkosKernel);
+#endif
 
   registerMooseObjectTask("add_variable",                 MooseVariableBase,         false);
   registerMooseObjectTask("add_aux_variable",             MooseVariableBase,         false);
   registerMooseObjectTask("add_elemental_field_variable", MooseVariableBase,         false);
 
   registerMooseObjectTask("add_nodal_kernel",             NodalKernel,               false);
+#ifdef MOOSE_KOKKOS_ENABLED
+  appendMooseObjectTask  ("add_nodal_kernel",             KokkosNodalKernel);
+#endif
 
   registerMooseObjectTask("add_functor_material",         FunctorMaterial,           false);
   registerMooseObjectTask("add_material",                 MaterialBase,              false);
   appendDeprecatedMooseObjectTask("add_material",         FunctorMaterial);
+#ifdef MOOSE_KOKKOS_ENABLED
+  appendMooseObjectTask  ("add_material",                 KokkosMaterial);
+#endif
+
   registerMooseObjectTask("add_bc",                       BoundaryCondition,         false);
+#ifdef MOOSE_KOKKOS_ENABLED
+  appendMooseObjectTask  ("add_bc",                       KokkosBoundaryCondition);
+#endif
 
   registerMooseObjectTask("add_function",                 Function,                  false);
   registerMooseObjectTask("add_distribution",             Distribution,              false);
@@ -143,6 +158,9 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_aux_kernel",               AuxKernel,                 false);
   appendMooseObjectTask  ("add_aux_kernel",               VectorAuxKernel);
   appendMooseObjectTask  ("add_aux_kernel",               ArrayAuxKernel);
+#ifdef MOOSE_KOKKOS_ENABLED
+  appendMooseObjectTask  ("add_aux_kernel",               KokkosAuxKernel); 
+#endif
   registerMooseObjectTask("add_bound",                    Bounds,                    false);
 
   registerMooseObjectTask("add_scalar_kernel",            ScalarKernel,              false);
@@ -248,6 +266,7 @@ addActionTypes(Syntax & syntax)
   registerTask("check_integrity_early", true);
   registerTask("check_integrity_early_physics", false);
   registerTask("setup_quadrature", true);
+  registerTask("create_tagged_matrices", true);
 
   registerTask("mesh_modifiers", false);
 
@@ -358,14 +377,16 @@ addActionTypes(Syntax & syntax)
                            "(add_positions)"
                            "(add_periodic_bc)"
                            "(add_user_object, add_corrector, add_mesh_modifier)"
+                           "(add_field_split)" // split objects required before field split preconditioner itself
+                           "(add_preconditioning)" // preconditioner may introduce objects such as static condensation which influence the underlying types of tagged matrices
+                           "(create_tagged_matrices)"
                            "(add_distribution)"
                            "(add_sampler)"
                            "(setup_function_complete)"
                            "(setup_adaptivity)"
                            "(set_adaptivity_options)"
                            "(add_ic, add_fv_ic)"
-                           "(add_constraint, add_field_split)"
-                           "(add_preconditioning)"
+                           "(add_constraint)"
                            "(add_times)"
                            "(add_time_stepper, add_time_steppers)"
                            "(compose_time_stepper)"
@@ -536,6 +557,14 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntaxTask("AddBCAction", "BCs/*", "add_bc");
 
+#ifdef MOOSE_KOKKOS_ENABLED
+  registerSyntaxTask("AddKokkosKernelAction", "KokkosKernels/*", "add_kernel");
+  registerSyntaxTask("AddKokkosNodalKernelAction", "KokkosNodalKernels/*", "add_nodal_kernel");
+  registerSyntaxTask("AddKokkosKernelAction", "KokkosAuxKernels/*", "add_aux_kernel");
+
+  registerSyntaxTask("AddKokkosBCAction", "KokkosBCs/*", "add_bc");
+#endif
+
   registerSyntax("CreateProblemAction", "Problem");
   registerSyntax("DynamicObjectRegistrationAction", "Problem");
 
@@ -593,6 +622,11 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntax("AddMaterialAction", "Materials/*");
   syntax.registerSyntaxType("Materials/*", "MaterialName");
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  registerSyntax("AddKokkosMaterialAction", "KokkosMaterials/*");
+  syntax.registerSyntaxType("KokkosMaterials/*", "MaterialName");
+#endif
 
   registerSyntax("AddFunctorMaterialAction", "FunctorMaterials/*");
   syntax.registerSyntaxType("FunctorMaterials/*", "MaterialName");
@@ -756,6 +790,29 @@ setColorConsole(bool use_color, bool force)
 {
   _color_console = (isatty(fileno(stdout)) || force) && use_color;
   return _color_console;
+}
+
+ScopedThrowOnError::ScopedThrowOnError(const bool throw_on_error)
+  : _throw_on_error_before(Moose::_throw_on_error)
+{
+  mooseAssert(!libMesh::Threads::in_threads, "Cannot be used in threads");
+  Moose::_throw_on_error = throw_on_error;
+}
+
+ScopedThrowOnError::ScopedThrowOnError() : ScopedThrowOnError(true) {}
+
+ScopedThrowOnError::~ScopedThrowOnError() { Moose::_throw_on_error = _throw_on_error_before; }
+
+std::string
+hitMessagePrefix(const hit::Node & node)
+{
+  // Strip meaningless line and column number for CLI args
+  if (node.filename() == "CLI_ARGS")
+    return "CLI_ARGS:\n";
+  // If using the root node, don't add line info
+  if (node.isRoot())
+    return node.filename() + ":\n";
+  return node.fileLocation() + ":\n";
 }
 
 bool _warnings_are_errors = false;

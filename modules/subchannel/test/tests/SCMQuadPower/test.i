@@ -12,7 +12,7 @@ P_out = 4.923e6 # Pa
     n_cells = ${num_cells}
     pitch = 0.25
     pin_diameter = 0.125
-    gap = 0.1
+    side_gap = 0.1
     unheated_length_entry = 0.5
     heated_length = 0.5
     unheated_length_exit = 0.5
@@ -178,8 +178,11 @@ P_out = 4.923e6 # Pa
     type = ElementIntegralVariablePostprocessor
     variable = q_prime_aux
   []
-  [Total_power_SCMPowerPostprocessor]
-    type = SCMPowerPostprocessor
+  [Total_power_SCMPinPowerPostprocessor]
+    type = SCMPinPowerPostprocessor
+  []
+  [Total_power_SCMTHPowerPostprocessor]
+    type = SCMTHPowerPostprocessor
   []
 []
 

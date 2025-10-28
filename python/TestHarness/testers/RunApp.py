@@ -49,6 +49,7 @@ class RunApp(Tester):
         params.addParam('no_additional_cli_args', False, "A Boolean indicating that no additional CLI args should be added from the TestHarness. Note: This parameter should be rarely used as it will not pass on additional options such as those related to mpi, threads, distributed mesh, errors, etc.")
 
         params.addParam('capture_perf_graph', True, 'Whether or not to enable the capturing of PerfGraph output via Outputs/perf_graph_json_file and --capture-perf-graph')
+        params.addParam("perf_graph_live", False, "Whether to enable perf graph live printing")
 
         # Valgrind
         params.addParam('valgrind', 'NORMAL', "Set to (NONE, NORMAL, HEAVY) to determine which configurations where valgrind will run.")
@@ -242,13 +243,16 @@ class RunApp(Tester):
         if specs['capabilities']:
             cli_args.append('--required-capabilities="' + quote(specs['capabilities'])+'"')
 
-        if (options.parallel_mesh or options.distributed_mesh) and ('--parallel-mesh' not in cli_args or '--distributed-mesh' not in cli_args):
+        if options.distributed_mesh and '--distributed-mesh' not in cli_args:
             # The user has passed the parallel-mesh option to the test harness
             # and it is NOT supplied already in the cli-args option
             cli_args.append('--distributed-mesh')
 
         if specs['restep'] != False and options.enable_restep:
             cli_args.append('--test-restep')
+
+        if not specs['perf_graph_live'] and '--disable-perf-graph-live' not in cli_args:
+            cli_args.append('--disable-perf-graph-live')
 
         if '--error' not in cli_args and (not specs["allow_warnings"] or options.error) and not options.allow_warnings:
             cli_args.append('--error')
@@ -299,7 +303,7 @@ class RunApp(Tester):
             command += specs['input_switch'] + ' ' + specs['input'] + ' '
         command += ' '.join(cli_args)
         if options.valgrind_mode.upper() == specs['valgrind'].upper() or options.valgrind_mode.upper() == 'HEAVY' and specs['valgrind'].upper() == 'NORMAL':
-            command = 'valgrind --suppressions=' + os.path.join(specs['moose_dir'], 'python', 'TestHarness', 'suppressions', 'errors.supp') + ' --leak-check=full --tool=memcheck --dsymutil=yes --track-origins=yes --demangle=yes -v ' + command
+            command = 'valgrind --suppressions=' + os.path.join(specs['moose_dir'], 'python', 'TestHarness', 'suppressions', 'errors.supp') + ' --leak-check=full --tool=memcheck --dsymutil=yes --track-origins=yes --demangle=yes --enable-debuginfod=no -v ' + command
         elif nthreads > 1:
             command = command + ' --n-threads=' + str(nthreads)
 

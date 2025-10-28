@@ -13,6 +13,7 @@
 #include "MooseArray.h"
 #include "MooseTypes.h"
 #include "MooseVariableFE.h"
+#include "MoosePassKey.h"
 #include "ArbitraryQuadrature.h"
 
 #include "libmesh/dense_vector.h"
@@ -62,6 +63,13 @@ typedef MooseVariableFE<RealEigenVector> ArrayMooseVariable;
 class XFEMInterface;
 class SubProblem;
 class NodeFaceConstraint;
+
+#ifdef MOOSE_KOKKOS_ENABLED
+namespace Moose::Kokkos
+{
+class Assembly;
+}
+#endif
 
 // Assembly.h does not import Moose.h nor libMeshReducedNamespace.h
 using libMesh::FEBase;
@@ -211,6 +219,15 @@ public:
     return constify_ref(_vector_fe_face_neighbor[dim][type]);
   }
 
+#ifdef MOOSE_KOKKOS_ENABLED
+  /**
+   * Key structure for APIs manipulating internal shape and quadrature data. Developers in blessed
+   * classes may create keys using simple curly braces \p {} or may be more explicit and use \p
+   * Assembly::InternalDataKey{}
+   */
+  using InternalDataKey = Moose::PassKey<Moose::Kokkos::Assembly>;
+#endif
+
   /**
    * Returns the reference to the current quadrature being used
    * @return A _reference_ to the pointer.  Make sure to store this as a reference!
@@ -222,6 +239,17 @@ public:
    * @return A _reference_ to the pointer.  Make sure to store this as a reference!
    */
   libMesh::QBase * const & writeableQRule() { return _current_qrule; }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  /**
+   * Returns the pointer to the quadrature of specified block and dimension
+   * @return A pointer.
+   */
+  libMesh::QBase * writeableQRule(unsigned int dim, SubdomainID block, InternalDataKey)
+  {
+    return qrules(dim, block).vol.get();
+  }
+#endif
 
   /**
    * Returns the reference to the quadrature points
@@ -298,6 +326,17 @@ public:
    * @return A _reference_.  Make sure to store this as a reference!
    */
   libMesh::QBase * const & writeableQRuleFace() { return _current_qrule_face; }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  /**
+   * Returns the pointer to the quadrature used on a face of specified block and dimension
+   * @return A pointer.
+   */
+  libMesh::QBase * writeableQRuleFace(unsigned int dim, SubdomainID block, InternalDataKey)
+  {
+    return qrules(dim, block).face.get();
+  }
+#endif
 
   /**
    * Returns the reference to the current quadrature being used
@@ -587,16 +626,6 @@ public:
    * Set the cached quadrature rules to nullptr
    */
   void clearCachedQRules();
-
-  /**
-   * Set the static condensation object
-   */
-  void addStaticCondensation(libMesh::StaticCondensation & sc) { _sc = &sc; }
-
-  /**
-   * @returns Whether we have static condensation
-   */
-  bool hasStaticCondensation() const { return _sc; }
 
 private:
   /**
@@ -2872,9 +2901,6 @@ protected:
 
   /// The current reference points on the neighbor element
   std::vector<Point> _current_neighbor_ref_points;
-
-  /// A pointer to the static condensation class. Null if not present
-  libMesh::StaticCondensation * _sc;
 };
 
 template <typename OutputType>

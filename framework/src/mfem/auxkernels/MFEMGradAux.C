@@ -42,8 +42,7 @@ MFEMGradAux::MFEMGradAux(const InputParameters & parameters)
 void
 MFEMGradAux::execute()
 {
-  _result_var = 0.0;
-  _grad.AddMult(_source_var, _result_var, _scale_factor);
+  _grad.AddMult(_source_var, _result_var = 0, _scale_factor);
 }
 
 #endif

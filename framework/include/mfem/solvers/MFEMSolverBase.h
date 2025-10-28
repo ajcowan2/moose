@@ -15,6 +15,7 @@
 #include <mfem.hpp>
 #include "libmesh/restore_warnings.h"
 #include <memory>
+#include "MFEMHyprePatch.h"
 
 /**
  * Base class for wrapping mfem::Solver-derived classes.
@@ -45,7 +46,7 @@ protected:
   virtual void constructSolver(const InputParameters & parameters) = 0;
 
   /// Checks for the correct configuration of quadrature bases for LOR spectral equivalence
-  virtual bool checkSpectralEquivalence(mfem::ParBilinearForm & blf) const;
+  virtual void checkSpectralEquivalence(mfem::ParBilinearForm & blf) const;
 
   /// Variable defining whether to use LOR solver
   bool _lor;

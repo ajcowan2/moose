@@ -34,6 +34,8 @@ MFEMProblem::MFEMProblem(const InputParameters & params) : ExternalProblem(param
 {
   // Initialise Hypre for all MFEM problems.
   mfem::Hypre::Init();
+  // Disable multithreading for all MFEM problems (including any libMesh or MFEM subapps).
+  libMesh::libMeshPrivateData::_n_threads = 1;
   setMesh();
 }
 
@@ -50,8 +52,8 @@ MFEMProblem::setMesh()
   auto pmesh = mesh().getMFEMParMeshPtr();
   getProblemData().pmesh = pmesh;
   getProblemData().comm = pmesh->GetComm();
-  MPI_Comm_size(pmesh->GetComm(), &(getProblemData().num_procs));
-  MPI_Comm_rank(pmesh->GetComm(), &(getProblemData().myid));
+  getProblemData().num_procs = pmesh->GetNRanks();
+  getProblemData().myid = pmesh->GetMyRank();
 }
 
 void
@@ -76,7 +78,7 @@ MFEMProblem::addMFEMSolver(const std::string & user_object_name,
 void
 MFEMProblem::addMFEMNonlinearSolver()
 {
-  auto nl_solver = std::make_shared<mfem::NewtonSolver>(getProblemData().comm);
+  auto nl_solver = std::make_shared<mfem::NewtonSolver>(getComm());
 
   // Defaults to one iteration, without further nonlinear iterations
   nl_solver->SetRelTol(0.0);
@@ -166,9 +168,7 @@ MFEMProblem::addVariable(const std::string & var_type,
   // MFEM GridFunctions store data for only one set of DoFs each, so we must add additional
   // GridFunctions for time derivatives.
   if (isTransient())
-  {
     addGridFunction(var_type, Moose::MFEM::GetTimeDerivativeName(var_name), parameters);
-  }
 }
 
 void
@@ -207,8 +207,9 @@ MFEMProblem::addAuxVariable(const std::string & var_type,
                             const std::string & var_name,
                             InputParameters & parameters)
 {
-  // We do not handle MFEM AuxVariables separately from variables currently
-  addVariable(var_type, var_name, parameters);
+  // We handle MFEM AuxVariables just like MFEM Variables, except
+  // we do not add additional GridFunctions for time derivatives.
+  addGridFunction(var_type, var_name, parameters);
 }
 
 void
@@ -335,7 +336,7 @@ MFEMProblem::addFunction(const std::string & type,
   {
     getCoefficients().declareScalar<mfem::FunctionCoefficient>(
         name,
-        [&func](const mfem::Vector & p, double t) -> mfem::real_t
+        [&func](const mfem::Vector & p, mfem::real_t t) -> mfem::real_t
         { return func.value(t, pointFromMFEMVector(p)); });
   }
   else if (std::find(VECTOR_FUNCS.begin(), VECTOR_FUNCS.end(), type) != VECTOR_FUNCS.end())
@@ -344,7 +345,7 @@ MFEMProblem::addFunction(const std::string & type,
     getCoefficients().declareVector<mfem::VectorFunctionCoefficient>(
         name,
         dim,
-        [&func, dim](const mfem::Vector & p, double t, mfem::Vector & u)
+        [&func, dim](const mfem::Vector & p, mfem::real_t t, mfem::Vector & u)
         {
           libMesh::RealVectorValue vector_value = func.vectorValue(t, pointFromMFEMVector(p));
           for (int i = 0; i < dim; i++)
@@ -366,11 +367,10 @@ MFEMProblem::addPostprocessor(const std::string & type,
                               const std::string & name,
                               InputParameters & parameters)
 {
-  // For some reason this isn't getting called
   ExternalProblem::addPostprocessor(type, name, parameters);
   const PostprocessorValue & val = getPostprocessorValueByName(name);
   getCoefficients().declareScalar<mfem::FunctionCoefficient>(
-      name, [&val](const mfem::Vector &, double) -> mfem::real_t { return val; });
+      name, [&val](const mfem::Vector &) -> mfem::real_t { return val; });
 }
 
 InputParameters
@@ -493,7 +493,7 @@ MFEMProblem::addTransfer(const std::string & transfer_name,
                          const std::string & name,
                          InputParameters & parameters)
 {
-  if (parameters.get<std::string>("_moose_base") == "MFEMSubMeshTransfer")
+  if (parameters.getBase() == "MFEMSubMeshTransfer")
     FEProblemBase::addUserObject(transfer_name, name, parameters);
   else
     FEProblemBase::addTransfer(transfer_name, name, parameters);

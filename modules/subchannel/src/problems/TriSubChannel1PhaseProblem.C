@@ -673,6 +673,22 @@ TriSubChannel1PhaseProblem::computeAddedHeatPin(unsigned int i_ch, unsigned int 
     return 0.0;
 }
 
+Real
+TriSubChannel1PhaseProblem::getSubChannelPeripheralDuctWidth(unsigned int i_ch)
+{
+  auto subch_type = _subchannel_mesh.getSubchannelType(i_ch);
+  if (subch_type == EChannelType::EDGE || subch_type == EChannelType::CORNER)
+  {
+    auto width = _subchannel_mesh.getPitch();
+    if (subch_type == EChannelType::CORNER)
+      width = 2.0 / std::sqrt(3.0) *
+              (_subchannel_mesh.getPinDiameter() / 2.0 + _tri_sch_mesh.getDuctToPinGap());
+    return width;
+  }
+  else
+    mooseError("Channel is not a perimetric subchannel ");
+}
+
 void
 TriSubChannel1PhaseProblem::computeh(int iblock)
 {
@@ -1467,7 +1483,7 @@ TriSubChannel1PhaseProblem::computeh(int iblock)
       PC pc;
       Vec sol;
       LibmeshPetscCall(VecDuplicate(_hc_sys_h_rhs, &sol));
-      LibmeshPetscCall(KSPCreate(PETSC_COMM_WORLD, &ksploc));
+      LibmeshPetscCall(KSPCreate(PETSC_COMM_SELF, &ksploc));
       LibmeshPetscCall(KSPSetOperators(ksploc, _hc_sys_h_mat, _hc_sys_h_mat));
       LibmeshPetscCall(KSPGetPC(ksploc, &pc));
       LibmeshPetscCall(PCSetType(pc, PCJACOBI));

@@ -6,6 +6,8 @@ monthly to the [MOOSE discussion forum](contact_us.md) as well as provided below
 
 ## 2025
 
+- [September, 2025](2025_09.md)
+- [August, 2025](2025_08.md)
 - [July, 2025](2025_07.md)
 - [June, 2025](2025_06.md)
 - [May, 2025](2025_05.md)

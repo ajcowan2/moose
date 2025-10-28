@@ -13,20 +13,29 @@ import tempfile
 import json
 from io import StringIO
 from contextlib import nullcontext, redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional
-
+from mock import patch
+from copy import deepcopy
 from TestHarness import TestHarness
+from TestHarness import util
+from TestHarness.schedulers.Job import Job
 import pyhit
 
 MOOSE_DIR = os.getenv('MOOSE_DIR')
+MOOSE_EXE = 'moose_test-opt'
 TEST_DIR = os.path.join(MOOSE_DIR, 'test')
-
 
 class TestHarnessTestCase(unittest.TestCase):
     """
     TestCase class for running TestHarness commands.
     """
+    # Cache for util.getCapabilities
+    CAPABILITIES_CACHE = {}
+    # Original method for util.getCapabilities to call during the patch
+    ORIG_GET_CAPABILITIES = util.getCapabilities
+    # Cache for runTestsCached()
+    RUN_TESTS_CACHED_CACHE: dict[str, 'RunTestsResult'] = {}
 
     @dataclass
     class RunTestsResult:
@@ -37,11 +46,27 @@ class TestHarnessTestCase(unittest.TestCase):
         # TestHarness that was ran
         harness: Optional[TestHarness] = None
 
+    def setUp(self):
+        # Wrap getCapabilities so that we don't call the application
+        # with the same arguments more than once. The first time with
+        # a given exe, it'll run the app. Every time after
+        # that, it'll use the cache
+        def get_capabilities_cached(exe):
+            cache = TestHarnessTestCase.CAPABILITIES_CACHE
+            if exe not in cache:
+                result = TestHarnessTestCase.ORIG_GET_CAPABILITIES(exe)
+                cache[exe] = result
+            return cache[exe]
+        patcher = patch.object(util, 'getCapabilities', wraps=get_capabilities_cached)
+        self.addCleanup(patcher.stop)
+        self.mock_run_cmd = patcher.start()
+
     def runTests(self, *args,
                  tmp_output: bool = True,
                  no_capabilities: bool = True,
                  capture_results: bool = True,
                  exit_code: int = 0,
+                 run: bool = True,
                  tests: Optional[dict[str, dict]] = None) -> RunTestsResult:
         """
         Helper for running tests
@@ -90,8 +115,8 @@ class TestHarnessTestCase(unittest.TestCase):
                     f.write(test_spec)
 
                 # Link the moose-exe so that it can be found
-                moose_exe = os.path.join(TEST_DIR, 'moose_test-opt')
-                os.symlink(moose_exe, os.path.join(test_root, 'moose_test-opt'))
+                moose_exe = os.path.join(TEST_DIR, MOOSE_EXE)
+                os.symlink(moose_exe, os.path.join(test_root, MOOSE_EXE))
 
             cwd = os.getcwd()
             os.chdir(test_root)
@@ -99,10 +124,13 @@ class TestHarnessTestCase(unittest.TestCase):
             try:
                 with redirect_stdout(stdout):
                     result.harness = TestHarness.build(argv, 'moose_test', MOOSE_DIR, **test_harness_build_kwargs)
-                    result.harness.findAndRunTests()
+                    if run:
+                        result.harness.findAndRunTests()
             except SystemExit as e:
-                self.assertEqual(e.code, exit_code)
-                return result
+                if isinstance(e.code, int):
+                    self.assertEqual(e.code, exit_code)
+                    return result
+                raise
             finally:
                 os.chdir(cwd)
                 result.output = stdout.getvalue()
@@ -117,6 +145,30 @@ class TestHarnessTestCase(unittest.TestCase):
                     result.results = json.loads(f.read())
 
         return result
+
+    def runTestsCached(self, *args, **kwargs) -> RunTestsResult:
+        """
+        Same as runTests(), but caches the result based on the
+        arguments so that the test harness isn't ran multiple
+        times with the same number of arguments.
+
+        The TestHarness object isn't deep copied, but the output
+        and results are so that they can be manipulated
+        """
+        # Combined key for the arguments
+        key = 'args=' + ','.join(args) + 'kwargs=' + ','.join([f'{k}={v}' for k, v in kwargs.items()])
+        # Build the result if it doesn't exist in the cache
+        if key not in self.RUN_TESTS_CACHED_CACHE:
+            self.RUN_TESTS_CACHED_CACHE[key] = self.runTests(*args, **kwargs)
+
+        # Build a new result with copied data
+        result = self.RUN_TESTS_CACHED_CACHE[key]
+        result_copy = {'harness': result.harness}
+        for key in ['output', 'results']:
+            if getattr(result, key):
+                result_copy[key] = deepcopy(getattr(result, key))
+
+        return self.RunTestsResult(**result_copy)
 
     @staticmethod
     def buildTestSpec(tests: dict[str, list[dict]]) -> str:
@@ -138,6 +190,15 @@ class TestHarnessTestCase(unittest.TestCase):
             i += 1
 
         return root.render()
+
+    def getJobWithName(self, harness: TestHarness, name: str) -> Job:
+        job = None
+        for j in harness.finished_jobs:
+            if j.getTestNameShort() == name:
+                self.assertIsNone(job)
+                job = j
+        self.assertIsNotNone(job)
+        return job
 
     def checkStatus(self, harness: TestHarness,
                     passed: int = 0,

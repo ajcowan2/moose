@@ -16,6 +16,8 @@ from FactorySystem.MooseObject import MooseObject
 from FactorySystem.InputParameters import InputParameters
 from pathlib import Path
 from dataclasses import dataclass
+from copy import deepcopy
+from typing import Optional
 
 class Tester(MooseObject, OutputInterface):
     """
@@ -44,7 +46,6 @@ class Tester(MooseObject, OutputInterface):
         params.addParam('allow_test_objects', False, "Allow the use of test objects by adding --allow-test-objects to the command line.")
 
         params.addParam('valgrind', 'NONE', "Set to (NONE, NORMAL, HEAVY) to determine which configurations where valgrind will run.")
-        params.addParam('tags',      [], "A list of strings")
         params.addParam('max_buffer_size', None, "Bytes allowed in stdout/stderr before it is subjected to being trimmed. Set to -1 to ignore output size restrictions. "
                                                  "If 'max_buffer_size' is not set, the default value of 'None' triggers a reasonable value (e.g. 100 kB)")
         params.addParam('parallel_scheduling', False, "Allow all tests in test spec file to run in parallel (adheres to prereq rules).")
@@ -188,6 +189,7 @@ class Tester(MooseObject, OutputInterface):
     @dataclass
     class JSONMetadata:
         path: os.PathLike
+        data: Optional[dict] = None
 
     def __init__(self, name, params):
         MooseObject.__init__(self, name, params)
@@ -196,7 +198,6 @@ class Tester(MooseObject, OutputInterface):
         self.specs = params
         self.joined_out = ''
         self.process = None
-        self.tags = params['tags']
         self.__caveats = set([])
 
         # Alternate text we want to print as part of our status instead of the
@@ -290,11 +291,16 @@ class Tester(MooseObject, OutputInterface):
 
     def getResults(self, options) -> dict:
         """Get the results dict for this Tester"""
-        json_metadata = {k: os.path.join(self.getTestDir(), v.path) if v else None for k, v in self.json_metadata.items()}
-        return {'name': self.__class__.__name__,
-                'command': self.getCommand(options),
-                'input_file': self.getInputFile(),
-                'json_metadata': json_metadata}
+        results = {'name': self.__class__.__name__,
+                   'command': self.getCommand(options),
+                   'input_file': self.getInputFile()}
+        json_metadata = {}
+        for key, value in self.json_metadata.items():
+            if value.data:
+                json_metadata[key] = value.data
+        if json_metadata:
+            results['json_metadata'] = json_metadata
+        return results
 
     def getStatusMessage(self):
         return self.__tester_message
@@ -596,15 +602,6 @@ class Tester(MooseObject, OutputInterface):
         else:
             capabilities = None
 
-        tag_match = False
-        for t in self.tags:
-            if t in options.runtags:
-                tag_match = True
-                break
-        if len(options.runtags) > 0 and not tag_match:
-            self.setStatus(self.silent)
-            return False
-
         # If something has already deemed this test a failure
         if self.isFail():
             return False
@@ -723,14 +720,33 @@ class Tester(MooseObject, OutputInterface):
             reasons['libtorch_version'] = 'using libtorch ' + str(checks['libtorch_version']) + ' REQ: ' + libtorch_version
 
         # Check for supported capabilities
+        capabilities_present = None
         if self.specs['capabilities']:
-            if capabilities is None:
-                raise Exception('Capabilities are not available')
+            assert capabilities is not None
             capabilities_present = util.checkCapabilities(capabilities,
                                                           self.specs['capabilities'],
                                                           certain=self.specs['dynamic_capabilities'])[0]
             if not capabilities_present:
                 reasons['missing_capabilities'] = 'Needs: ' + self.specs['capabilities']
+
+        # Check for required capabilities
+        if options._required_capabilities:
+            assert capabilities is not None
+
+            missing = False
+            if capabilities_present is not None:
+                modified_capabilities = deepcopy(capabilities)
+                for k, v in options._required_capabilities:
+                    assert k in capabilities
+                    modified_capabilities[k][0] = v
+
+                modified_present = util.checkCapabilities(modified_capabilities,
+                                                          self.specs['capabilities'],
+                                                          certain=True)[0]
+                missing = capabilities_present != modified_present
+
+            if not missing:
+                reasons['missing_required_capabilities'] = 'Missing required capabilities'
 
         # PETSc and SLEPc is being explicitly checked above
         local_checks = ['platform', 'machine', 'compiler', 'mesh_mode', 'method', 'library_mode',
@@ -910,9 +926,9 @@ class Tester(MooseObject, OutputInterface):
         if output:
             output = output.rstrip() + '\n\n'
 
-        # Check existance of metadata
+        # Load metadata if it exists
         if not self.isSkip() and self.json_metadata:
-            output += 'Checking JSON metadata...\n'
+            output += 'Loading JSON metadata...\n'
             if exit_code == 0:
                 for key, entry in self.json_metadata.items():
                     path = os.path.join(self.getTestDir(), entry.path)
@@ -920,18 +936,17 @@ class Tester(MooseObject, OutputInterface):
                     if os.path.isfile(path):
                         try:
                             with open(path, 'r') as f:
-                                result = json.load(f)
-                                del result
+                                entry.data = json.load(f)
                         except:
                             output += f'{prefix}cannot be loaded\n'
                             self.setStatus(self.fail, 'BAD METADATA')
                         else:
-                            output += f'{prefix}exists and is valid\n'
+                            output += f'{prefix}loaded\n'
                     else:
                         output += f'{prefix}does not exist\n'
                         self.setStatus(self.fail, 'MISSING METADATA')
             else:
-                output += '  Not checking due to non-zero exit code\n'
+                output += '  Not loading due to non-zero exit code\n'
             output += '\n'
 
         # If the tester requested to be skipped at the last minute, report that.
