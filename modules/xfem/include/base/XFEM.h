@@ -181,7 +181,7 @@ public:
    */
   Real getPhysicalVolumeFraction(const Elem * elem) const;
 
-  Point getPhyiscalCenterPoint(const Elem * elem) const;
+  Point getPhysicalCenterPoint(const Elem * elem) const;
 
   /**
    * Return true if the point is inside the element physical domain

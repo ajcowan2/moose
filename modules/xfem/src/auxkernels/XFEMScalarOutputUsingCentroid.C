@@ -7,60 +7,56 @@
 //* Licensed under LGPL 2.1, please see LICENSE for details
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
-#include "XFEMTensorOutput.h"
+#include "XFEMScalarOutputUsingCentroid.h"
 #include "petscblaslapack.h"
-
 #include "XFEM.h"
 
-registerMooseObject("XFEMApp", XFEMTensorOutput);
+registerMooseObject("XFEMApp", XFEMScalarOutputUsingCentroid);
 
 InputParameters
-XFEMTensorOutput::validParams()
+XFEMScalarOutputUsingCentroid::validParams()
 {
   InputParameters params = AuxKernel::validParams();
   params.addClassDescription(
       "Computes the volume fraction of the physical material in each partial element.");
-
-  params.addParam<unsigned int>(
-      "i", 0, "First index of the stress tensor component (0, 1, 2)");
-
-  params.addParam<unsigned int>(
-      "j", 0, "Second index of the stress tensor component (0, 1, 2)");
-
+  params.addRequiredParam<std::string>("property_name", "The name of the scalar material property to project");
   return params;
 }
 
-XFEMTensorOutput::XFEMTensorOutput(const InputParameters & parameters)
-  : AuxKernel(parameters), 
-    _stress(getMaterialPropertyByName<RankTwoTensor>("stress")),
-    _i(getParam<unsigned int>("i")),
-    _j(getParam<unsigned int>("j"))
+XFEMScalarOutputUsingCentroid::XFEMScalarOutputUsingCentroid(const InputParameters & parameters)
+  : AuxKernel(parameters),
+    _scalar_property(getMaterialProperty<Real>(parameters.get<std::string>("property_name")))
 {
   if (isNodal())
-    mooseError("XFEMTensorOutput must be run on an element variable");
+    mooseError("XFEMScalarOutputUsingCentroid must be run on an element variable");
+
   FEProblemBase * fe_problem = dynamic_cast<FEProblemBase *>(&_subproblem);
   if (fe_problem == nullptr)
-    mooseError("Problem casting _subproblem to FEProblemBase in XFEMTensorOutput");
+    mooseError("Problem casting _subproblem to FEProblemBase in XFEMScalarOutputUsingCentroid");
+
   _xfem = MooseSharedNamespace::dynamic_pointer_cast<XFEM>(fe_problem->getXFEM());
   if (_xfem == nullptr)
-    mooseError("Problem casting to XFEM in XFEMTensorOutput");
-  if (_i > 2 || _j > 2)
-    mooseError("Invalid tensor component: i and j must be 0, 1, or 2 for RankTwoTensor.");
+    mooseError("Problem casting to XFEM in XFEMScalarOutputUsingCentroid");
 }
 
 Real
-XFEMTensorOutput::computeValue()
+XFEMScalarOutputUsingCentroid::computeValue()
 {
+  // std::cout << "elem id = " << _current_elem->id() << std::endl;
+  // std::cout << _xfem->getPhysicalCenterPoint(_current_elem) << std::endl;
   return _xfem->getPhysicalVolumeFraction(_current_elem);
 }
 
 void
-XFEMTensorOutput::compute()
+XFEMScalarOutputUsingCentroid::compute()
 {
   precalculateValue();
   if (_xfem->isElemCut(_current_elem))
   {
     Point cp = _xfem->getPhysicalCenterPoint(_current_elem);
+
+    // std::cout << _current_elem->id() << std::endl;
+    // std::cout << "center point = " << cp << std::endl;
 
     unsigned int N = _qrule->n_points();
 
@@ -68,7 +64,7 @@ XFEMTensorOutput::compute()
     known_values.resize(N);
     for (unsigned int i = 0; i < N; ++i)
     {
-      known_values[i] = _stress[i](_i, _j);
+      known_values[i] = _scalar_property[i];
     }
 
     // Build A matrix
@@ -123,12 +119,24 @@ XFEMTensorOutput::compute()
     double value = b[0] + b[1] * cp(0) + b[2] * cp(1) + b[3] * cp(0) * cp(1);
 
     _var.setNodalValue(value);
+
+    // std::cout << "value = " << value << std::endl;
+
+    // Real value1 = 0;
+    // for (_qp = 0; _qp < _qrule->n_points(); _qp++)
+    // {
+    //   value1 += _JxW[_qp] * _coord[_qp] * _stress[_qp](1, 1);
+    //   std::cout << "qp = " << _qp << ", stress = " << _stress[_qp](1, 1) << std::endl;
+    // }
+
+    // value1 /= (_bnd ? _current_side_volume : _current_elem_volume);
+    // std::cout << "value1 = " << value1 << std::endl;
   }
   else
   {
     Real value = 0;
     for (_qp = 0; _qp < _qrule->n_points(); _qp++)
-      value += _JxW[_qp] * _coord[_qp] * _stress[_qp](_i, _j);
+      value += _JxW[_qp] * _coord[_qp] * _scalar_property[_qp];
 
     value /= (_bnd ? _current_side_volume : _current_elem_volume);
     _var.setNodalValue(value);

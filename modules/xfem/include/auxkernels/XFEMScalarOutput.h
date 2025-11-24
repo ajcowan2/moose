@@ -12,26 +12,39 @@
 #include "AuxKernel.h"
 
 class XFEM;
+class FEProblemBase;
+class Elem;
 
 /**
- * Coupled auxiliary value
+ * Projects a scalar material property to the kept fragment of cut elements via
+ * a bilinear least-squares fit and reports its area-averaged elemental value.
  */
 class XFEMScalarOutput : public AuxKernel
 {
 public:
-  /**
-   * Factory constructor, takes parameters so that all derived classes can be built using the same
-   * constructor.
-   */
   static InputParameters validParams();
   XFEMScalarOutput(const InputParameters & parameters);
   virtual ~XFEMScalarOutput() {}
 
 protected:
-  virtual Real computeValue();
-  virtual void compute();
+  virtual Real computeValue() override;
+  // In your MOOSE build AuxKernel::compute() returns void.
+  virtual void compute() override;
+
   const MaterialProperty<Real> & _scalar_property;
 
 private:
   std::shared_ptr<XFEM> _xfem;
+  FEProblemBase * _fe_problem = nullptr; // used for coord system (RZ) check
+  unsigned int _tri_quad_rule = 2;       // triangle integration rule (user param)
 };
+
+/** Free helpers declared in header (available to other TUs). */
+std::vector<std::array<Point, 3>>
+buildPolygon(const XFEM & xfem, const Elem * elem);
+
+void
+getqRule(const std::vector<Point> & poly_pts,
+         unsigned int tri_rule,
+         std::vector<Point> & quad_pts,
+         std::vector<Real>  & quad_wts);

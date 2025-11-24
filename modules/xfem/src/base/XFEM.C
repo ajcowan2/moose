@@ -1648,7 +1648,7 @@ XFEM::getPhysicalVolumeFraction(const Elem * elem) const
 }
 
 Point
-XFEM::getPhyiscalCenterPoint(const Elem * elem) const
+XFEM::getPhysicalCenterPoint(const Elem * elem) const
 {
   Point cp;
   std::map<unique_id_type, XFEMCutElem *>::const_iterator it;
