@@ -36,7 +36,6 @@
 #include "ConsoleUtils.h"
 #include "JsonSyntaxTree.h"
 #include "JsonInputFileFormatter.h"
-#include "SONDefinitionFormatter.h"
 #include "RelationshipManager.h"
 #include "ProxyRelationshipManager.h"
 #include "Registry.h"
@@ -155,8 +154,6 @@ MooseApp::validParams()
       "--language-server",
       "Starts a process to communicate with development tools using the language server protocol");
 
-  params.addCommandLineParam<bool>(
-      "definition", "--definition", "Shows a SON style input definition dump for input validation");
   params.addCommandLineParam<bool>("dump", "--dump", "Shows a dump of available input file syntax");
   params.addCommandLineParam<std::string>(
       "dump_search",
@@ -700,8 +697,7 @@ MooseApp::MooseApp(const InputParameters & parameters)
                  "about adding your debugger.");
 
     // Finish up the command
-    command_stream << "\""
-                   << " & ";
+    command_stream << "\"" << " & ";
     std::string command_string = command_stream.str();
     Moose::out << "Running: " << command_string << std::endl;
 
@@ -1459,18 +1455,6 @@ MooseApp::setupOptions()
     _early_exit_param = "--registry_hit";
     _ready_to_exit = true;
   }
-  else if (getParam<bool>("definition"))
-  {
-    _perf_graph.disableLivePrint();
-
-    JsonSyntaxTree tree("");
-    _builder.buildJsonSyntaxTree(tree);
-    SONDefinitionFormatter formatter;
-    Moose::out << "%-START-SON-DEFINITION-%\n"
-               << formatter.toString(tree.getRoot()) << "\n%-END-SON-DEFINITION-%\n";
-    _early_exit_param = "--definition";
-    _ready_to_exit = true;
-  }
   else if (getParam<bool>("yaml") || isParamSetByUser("yaml_search"))
   {
     const std::string search =
@@ -1712,8 +1696,19 @@ MooseApp::setupOptions()
 
 #ifdef MOOSE_KOKKOS_ENABLED
   for (auto & action : _action_warehouse.allActionBlocks())
-    if (action->isParamValid("_kokkos_action"))
+  {
+    auto object_action = std::dynamic_pointer_cast<MooseObjectAction>(action);
+    if (object_action &&
+        object_action->getObjectParams().isParamValid(MooseBase::kokkos_object_param))
+    {
+      if (!isKokkosAvailable())
+        mooseError("Attempted to add a ",
+                   object_action->getMooseObjectType(),
+                   " but no GPU was detected in the system.");
+
       _has_kokkos_objects = true;
+    }
+  }
 #endif
 
   Moose::out << std::flush;
@@ -2250,12 +2245,12 @@ MooseApp::run()
   catch (Parser::Error & err)
   {
     mooseAssert(_parser->getThrowOnError(), "Should be true");
-    throw err;
+    throw;
   }
   catch (MooseRuntimeError & err)
   {
     mooseAssert(Moose::_throw_on_error, "Should be true");
-    throw err;
+    throw;
   }
   catch (std::exception & err)
   {

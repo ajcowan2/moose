@@ -91,7 +91,7 @@ heated_length = 1.0
   []
 []
 
-[Problem]
+[SubChannel]
   type = TriSubChannel1PhaseProblem
   fp = Sodium
   n_blocks = 1
@@ -105,10 +105,17 @@ heated_length = 1.0
   implicit = true
   segregated = false
   staggered_pressure = false
-  monolithic_thermal = false
   verbose_multiapps = true
   verbose_subchannel = false
   interpolation_scheme = 'upwind'
+  pin_htc_correlation = 'gnielinski'
+  friction_closure = 'Cheng'
+[]
+
+[SCMClosures]
+  [Cheng]
+    type = SCMFrictionUpdatedChengTodreas
+  []
 []
 
 [ICs]

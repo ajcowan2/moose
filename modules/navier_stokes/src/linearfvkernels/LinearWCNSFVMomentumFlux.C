@@ -123,6 +123,7 @@ Real
 LinearWCNSFVMomentumFlux::computeBoundaryMatrixContribution(const LinearFVBoundaryCondition & bc)
 {
   const auto * const adv_diff_bc = static_cast<const LinearFVAdvectionDiffusionBC *>(&bc);
+
   mooseAssert(adv_diff_bc, "This should be a valid BC!");
   return (computeStressBoundaryMatrixContribution(adv_diff_bc) +
           computeAdvectionBoundaryMatrixContribution(adv_diff_bc)) *
@@ -133,7 +134,6 @@ Real
 LinearWCNSFVMomentumFlux::computeBoundaryRHSContribution(const LinearFVBoundaryCondition & bc)
 {
   const auto * const adv_diff_bc = static_cast<const LinearFVAdvectionDiffusionBC *>(&bc);
-
   mooseAssert(adv_diff_bc, "This should be a valid BC!");
   return (computeStressBoundaryRHSContribution(adv_diff_bc) +
           computeAdvectionBoundaryRHSContribution(adv_diff_bc)) *
@@ -252,8 +252,8 @@ LinearWCNSFVMomentumFlux::computeInternalStressRHSContribution()
           trace_neighbor += w_grad_neighbor(2);
         }
       }
-      deviatoric_vector_elem(_index) -= 2 / 3 * trace_elem;
-      deviatoric_vector_neighbor(_index) -= 2 / 3 * trace_neighbor;
+      deviatoric_vector_elem(_index) -= 2. / 3 * trace_elem;
+      deviatoric_vector_neighbor(_index) -= 2. / 3 * trace_neighbor;
 
       _stress_rhs_contribution += _mu(face_arg, state_arg) *
                                   (interp_coeffs.first * deviatoric_vector_elem +
@@ -288,7 +288,6 @@ LinearWCNSFVMomentumFlux::computeStressBoundaryRHSContribution(
 {
   const auto face_arg = singleSidedFaceArg(_current_face_info);
   auto grad_contrib = bc->computeBoundaryGradientRHSContribution();
-
   // If the boundary condition does not include the diffusivity contribution then
   // add it here.
   if (!bc->includesMaterialPropertyMultiplier())
@@ -296,7 +295,7 @@ LinearWCNSFVMomentumFlux::computeStressBoundaryRHSContribution(
 
   // We add the nonorthogonal corrector for the face here. Potential idea: we could do
   // this in the boundary condition too. For now, however, we keep it like this.
-  if (_use_nonorthogonal_correction)
+  if (_use_nonorthogonal_correction && bc->useBoundaryGradientExtrapolation())
   {
     // We support internal boundaries as well. In that case we have to decide on which side
     // of the boundary we are on.
@@ -314,7 +313,7 @@ LinearWCNSFVMomentumFlux::computeStressBoundaryRHSContribution(
                     _boundary_normal_factor * correction_vector;
   }
 
-  if (_use_deviatoric_terms)
+  if (_use_deviatoric_terms && bc->useBoundaryGradientExtrapolation())
   {
     // We might be on a face which is an internal boundary so we want to make sure we
     // get the gradient from the right side.
@@ -346,7 +345,7 @@ LinearWCNSFVMomentumFlux::computeStressBoundaryRHSContribution(
       }
     }
 
-    frace_grad_approx(_index) -= 2 / 3 * trace_elem;
+    frace_grad_approx(_index) -= 2. / 3 * trace_elem;
 
     // We support internal boundaries too so we have to make sure the normal points always outward
     grad_contrib += _mu(face_arg, state_arg) * frace_grad_approx * _boundary_normal_factor *

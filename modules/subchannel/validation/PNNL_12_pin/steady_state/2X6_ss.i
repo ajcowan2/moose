@@ -88,7 +88,13 @@ P_out = 101325 # Pa
   P_out = ${P_out}
   implicit = true
   segregated = false
-  monolithic_thermal = false
+  friction_closure = 'MATRA'
+[]
+
+[SCMClosures]
+  [MATRA]
+    type = SCMFrictionMATRA
+  []
 []
 
 [ICs]

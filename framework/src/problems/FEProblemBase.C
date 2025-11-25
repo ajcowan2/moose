@@ -135,6 +135,9 @@
 
 #include "metaphysicl/dualnumber.h"
 
+// C++
+#include <cstring> // for "Jacobian" exception test
+
 using namespace libMesh;
 
 // Anonymous namespace for helper function
@@ -1095,7 +1098,7 @@ FEProblemBase::initialSetup()
   for (THREAD_ID tid = 0; tid < n_threads; ++tid)
     checkUserObjectJacobianRequirement(tid);
 
-  // Check whether nonlocal couling is required or not
+  // Check whether nonlocal coupling is required or not
   checkNonlocalCoupling();
   if (_requires_nonlocal_coupling)
     setVariableAllDoFMap(_uo_jacobian_moose_vars[0]);
@@ -1110,6 +1113,10 @@ FEProblemBase::initialSetup()
                           // ParsedFunctions
       _functions.initialSetup(tid);
     }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+    _kokkos_functions.initialSetup();
+#endif
   }
 
   {
@@ -1487,6 +1494,7 @@ FEProblemBase::initialSetup()
   }
 
   // Control Logic
+  _control_warehouse.initialSetup();
   executeControls(EXEC_INITIAL);
 
   // Scalar variables need to reinited for the initial conditions to be available for output
@@ -1593,6 +1601,7 @@ FEProblemBase::timestepSetup()
     es().reinit_systems();
   }
 
+  _control_warehouse.timestepSetup();
   if (_line_search)
     _line_search->timestepSetup();
 
@@ -1606,6 +1615,10 @@ FEProblemBase::timestepSetup()
     _all_materials.timestepSetup(tid);
     _functions.timestepSetup(tid);
   }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  _kokkos_functions.timestepSetup();
+#endif
 
   _aux->timestepSetup();
   for (auto & sys : _solver_systems)
@@ -4806,6 +4819,10 @@ FEProblemBase::customSetup(const ExecFlagType & exec_type)
     _functions.customSetup(exec_type, tid);
   }
 
+#ifdef MOOSE_KOKKOS_ENABLED
+  _kokkos_functions.customSetup(exec_type);
+#endif
+
   _aux->customSetup(exec_type);
   for (auto & nl : _nl)
     nl->customSetup(exec_type);
@@ -5265,7 +5282,10 @@ FEProblemBase::executeControls(const ExecFlagType & exec_type)
 
     if (!ordered_controls.empty())
     {
-      _control_warehouse.setup(exec_type);
+      // already called by initialSetup when exec_type == EXEC_INITIAL
+      if (exec_type != EXEC_INITIAL)
+        _control_warehouse.setup(exec_type);
+
       // Run the controls in the proper order
       for (const auto & control : ordered_controls)
         control->execute();
@@ -7232,6 +7252,10 @@ FEProblemBase::computeResidualAndJacobian(const NumericVector<Number> & soln,
         _functions.residualSetup(tid);
       }
 
+#ifdef MOOSE_KOKKOS_ENABLED
+      _kokkos_functions.residualSetup();
+#endif
+
       computeSystems(EXEC_LINEAR);
 
       computeUserObjects(EXEC_LINEAR, Moose::POST_AUX);
@@ -7376,10 +7400,6 @@ FEProblemBase::handleException(const std::string & calling_method)
   {
     throw;
   }
-  catch (const libMesh::LogicError & e)
-  {
-    setException(create_exception_message("libMesh::LogicError", e));
-  }
   catch (const MooseException & e)
   {
     setException(create_exception_message("MooseException", e));
@@ -7404,11 +7424,18 @@ FEProblemBase::handleException(const std::string & calling_method)
   }
   catch (const std::exception & e)
   {
-    const auto message = create_exception_message("std::exception", e);
-    if (_regard_general_exceptions_as_errors)
-      mooseError(message);
+    // This might be libMesh detecting a degenerate Jacobian or matrix
+    if (strstr(e.what(), "Jacobian") || strstr(e.what(), "singular") ||
+        strstr(e.what(), "det != 0"))
+      setException(create_exception_message("libMesh DegenerateMap", e));
     else
-      setException(message);
+    {
+      const auto message = create_exception_message("std::exception", e);
+      if (_regard_general_exceptions_as_errors)
+        mooseError(message);
+      else
+        setException(message);
+    }
   }
 
   checkExceptionAndStopSolve();
@@ -7463,6 +7490,10 @@ FEProblemBase::computeResidualTags(const std::set<TagID> & tags)
         _all_materials.residualSetup(tid);
         _functions.residualSetup(tid);
       }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+      _kokkos_functions.residualSetup();
+#endif
 
       computeSystems(EXEC_LINEAR);
 
@@ -7609,6 +7640,10 @@ FEProblemBase::computeJacobianTags(const std::set<TagID> & tags)
           _all_materials.jacobianSetup(tid);
           _functions.jacobianSetup(tid);
         }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+        _kokkos_functions.jacobianSetup();
+#endif
 
         computeSystems(EXEC_NONLINEAR);
 
@@ -7797,6 +7832,10 @@ FEProblemBase::computeLinearSystemTags(const NumericVector<Number> & soln,
   {
     _functions.jacobianSetup(tid);
   }
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  _kokkos_functions.jacobianSetup();
+#endif
 
   try
   {

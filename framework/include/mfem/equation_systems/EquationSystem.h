@@ -45,22 +45,48 @@ public:
   /// Add kernels.
   virtual void AddKernel(std::shared_ptr<MFEMKernel> kernel);
   virtual void AddIntegratedBC(std::shared_ptr<MFEMIntegratedBC> kernel);
+
+  /// Add BC associated with essentially constrained DoFs on boundaries.
   virtual void AddEssentialBC(std::shared_ptr<MFEMEssentialBC> bc);
 
   /// Initialise
-  virtual void Init(Moose::MFEM::GridFunctions & gridfunctions,
-                    const Moose::MFEM::FESpaces & fespaces,
+  virtual void Init(GridFunctions & gridfunctions,
+                    ComplexGridFunctions & cmplx_gridfunctions,
                     mfem::AssemblyLevel assembly_level);
 
   /// Build linear forms and eliminate constrained DoFs
   virtual void BuildLinearForms();
+
+  /// Apply essential BC(s) associated with test_var_name to set true DoFs of trial_gf and update
+  /// markers of all essential boundaries
+  virtual void ApplyEssentialBC(const std::string & test_var_name,
+                                mfem::ParGridFunction & trial_gf,
+                                mfem::Array<int> & global_ess_markers);
+  /// Update all essentially constrained true DoF markers and values on boundaries
   virtual void ApplyEssentialBCs();
+
+  /// Perform trivial eliminations of coupled variables lacking corresponding test variables
   virtual void EliminateCoupledVariables();
 
-  /// Build bilinear forms
+  /// Build bilinear forms (diagonal Jacobian contributions)
   virtual void BuildBilinearForms();
+  /// Build mixed bilinear forms (off-diagonal Jacobian contributions)
   virtual void BuildMixedBilinearForms();
+  /// Build all forms comprising this EquationSystem
   virtual void BuildEquationSystem();
+
+  /// Form Jacobian operator based on on- and off-diagonal bilinear form contributions, populate
+  /// solution and RHS vectors of true DoFs, and apply constraints
+  void AssembleJacobian(
+      Moose::MFEM::NamedFieldsMap<mfem::ParBilinearForm> & jac_blfs,
+      Moose::MFEM::NamedFieldsMap<Moose::MFEM::NamedFieldsMap<mfem::ParMixedBilinearForm>> &
+          jac_mblfs,
+      Moose::MFEM::NamedFieldsMap<mfem::ParLinearForm> & rhs_lfs,
+      std::vector<mfem::Array<int>> & ess_tdof_lists,
+      std::vector<std::unique_ptr<mfem::ParGridFunction>> & var_ess_constraints,
+      mfem::OperatorHandle & op,
+      mfem::BlockVector & trueX,
+      mfem::BlockVector & trueRHS);
 
   /// Form linear system, with essential boundary conditions accounted for
   virtual void FormLinearSystem(mfem::OperatorHandle & op,
@@ -84,7 +110,8 @@ public:
 
   /// Update variable from solution vector after solve
   virtual void RecoverFEMSolution(mfem::BlockVector & trueX,
-                                  Moose::MFEM::GridFunctions & gridfunctions);
+                                  GridFunctions & gridfunctions,
+                                  ComplexGridFunctions & cmplx_gridfunctions);
 
   std::vector<mfem::Array<int>> _ess_tdof_lists;
 
@@ -95,10 +122,10 @@ private:
   /// Disallowed inherited method
   using mfem::Operator::RecoverFEMSolution;
 
+protected:
   /// Set trial variable names from subset of coupled variables that have an associated test variable.
   virtual void SetTrialVariableNames();
 
-protected:
   /// Deletes the HypreParMatrix associated with any pointer stored in _h_blocks,
   /// and then proceeds to delete all dynamically allocated memory for _h_blocks
   /// itself, resetting all dimensions to zero.
@@ -129,10 +156,10 @@ protected:
   std::vector<mfem::ParFiniteElementSpace *> _coupled_pfespaces;
 
   // Components of weak form. // Named according to test variable
-  Moose::MFEM::NamedFieldsMap<mfem::ParBilinearForm> _blfs;
-  Moose::MFEM::NamedFieldsMap<mfem::ParLinearForm> _lfs;
-  Moose::MFEM::NamedFieldsMap<mfem::ParNonlinearForm> _nlfs;
-  Moose::MFEM::NamedFieldsMap<Moose::MFEM::NamedFieldsMap<mfem::ParMixedBilinearForm>>
+  NamedFieldsMap<mfem::ParBilinearForm> _blfs;
+  NamedFieldsMap<mfem::ParLinearForm> _lfs;
+  NamedFieldsMap<mfem::ParNonlinearForm> _nlfs;
+  NamedFieldsMap<NamedFieldsMap<mfem::ParMixedBilinearForm>>
       _mblfs; // named according to trial variable
 
   /**
@@ -144,29 +171,25 @@ protected:
       const std::string & trial_var_name,
       const std::string & test_var_name,
       std::shared_ptr<FormType> form,
-      Moose::MFEM::NamedFieldsMap<
-          Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map);
+      NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map);
 
   void ApplyDomainLFIntegrators(
       const std::string & test_var_name,
       std::shared_ptr<mfem::ParLinearForm> form,
-      Moose::MFEM::NamedFieldsMap<
-          Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map);
+      NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map);
 
   template <class FormType>
   void ApplyBoundaryBLFIntegrators(
       const std::string & trial_var_name,
       const std::string & test_var_name,
       std::shared_ptr<FormType> form,
-      Moose::MFEM::NamedFieldsMap<
-          Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
+      NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
           integrated_bc_map);
 
   void ApplyBoundaryLFIntegrators(
       const std::string & test_var_name,
       std::shared_ptr<mfem::ParLinearForm> form,
-      Moose::MFEM::NamedFieldsMap<
-          Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
+      NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
           integrated_bc_map);
 
   /// Gridfunctions holding essential constraints from Dirichlet BCs
@@ -176,16 +199,13 @@ protected:
 
   /// Arrays to store kernels to act on each component of weak form.
   /// Named according to test and trial variables.
-  Moose::MFEM::NamedFieldsMap<Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>>
-      _kernels_map;
+  NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> _kernels_map;
   /// Arrays to store integrated BCs to act on each component of weak form.
   /// Named according to test and trial variables.
-  Moose::MFEM::NamedFieldsMap<
-      Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>>
-      _integrated_bc_map;
+  NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> _integrated_bc_map;
   /// Arrays to store essential BCs to act on each component of weak form.
   /// Named according to test variable.
-  Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMEssentialBC>>> _essential_bc_map;
+  NamedFieldsMap<std::vector<std::shared_ptr<MFEMEssentialBC>>> _essential_bc_map;
 
   mutable mfem::OperatorHandle _jacobian;
 
@@ -198,8 +218,7 @@ EquationSystem::ApplyDomainBLFIntegrators(
     const std::string & trial_var_name,
     const std::string & test_var_name,
     std::shared_ptr<FormType> form,
-    Moose::MFEM::NamedFieldsMap<
-        Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map)
+    NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map)
 {
   if (kernels_map.Has(test_var_name) && kernels_map.Get(test_var_name)->Has(trial_var_name))
   {
@@ -221,8 +240,7 @@ inline void
 EquationSystem::ApplyDomainLFIntegrators(
     const std::string & test_var_name,
     std::shared_ptr<mfem::ParLinearForm> form,
-    Moose::MFEM::NamedFieldsMap<
-        Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map)
+    NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>> & kernels_map)
 {
   if (kernels_map.Has(test_var_name) && kernels_map.Get(test_var_name)->Has(test_var_name))
   {
@@ -246,8 +264,7 @@ EquationSystem::ApplyBoundaryBLFIntegrators(
     const std::string & trial_var_name,
     const std::string & test_var_name,
     std::shared_ptr<FormType> form,
-    Moose::MFEM::NamedFieldsMap<
-        Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
+    NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
         integrated_bc_map)
 {
   if (integrated_bc_map.Has(test_var_name) &&
@@ -271,8 +288,7 @@ inline void
 EquationSystem::ApplyBoundaryLFIntegrators(
     const std::string & test_var_name,
     std::shared_ptr<mfem::ParLinearForm> form,
-    Moose::MFEM::NamedFieldsMap<
-        Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
+    NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMIntegratedBC>>>> &
         integrated_bc_map)
 {
   if (integrated_bc_map.Has(test_var_name) &&
@@ -298,15 +314,21 @@ EquationSystem::ApplyBoundaryLFIntegrators(
 class TimeDependentEquationSystem : public EquationSystem
 {
 public:
-  TimeDependentEquationSystem();
+  TimeDependentEquationSystem(const Moose::MFEM::TimeDerivativeMap & time_derivative_map);
 
-  void AddCoupledVariableNameIfMissing(const std::string & coupled_var_name) override;
+  /// Initialise
+  virtual void Init(GridFunctions & gridfunctions,
+                    ComplexGridFunctions & cmplx_gridfunctions,
+                    mfem::AssemblyLevel assembly_level) override;
 
   virtual void SetTimeStep(mfem::real_t dt);
   virtual void UpdateEquationSystem();
 
   virtual void AddKernel(std::shared_ptr<MFEMKernel> kernel) override;
   virtual void BuildBilinearForms() override;
+  virtual void BuildMixedBilinearForms() override;
+  virtual void ApplyEssentialBCs() override;
+  virtual void EliminateCoupledVariables() override;
   virtual void FormLegacySystem(mfem::OperatorHandle & op,
                                 mfem::BlockVector & truedXdt,
                                 mfem::BlockVector & trueRHS) override;
@@ -314,16 +336,45 @@ public:
                           mfem::BlockVector & truedXdt,
                           mfem::BlockVector & trueRHS) override;
 
+  /// Fetch all integrators on a source bilinear form, scale them by a real factor, and add to a second target bilienar form.
+  /// Useful for scaling bilinear form integrators by timesteps.
+  template <class FormType>
+  void ScaleAndAddBLFIntegrators(std::shared_ptr<FormType> source_blf,
+                                 std::shared_ptr<FormType> target_blf,
+                                 mfem::real_t scale_factor)
+  {
+    // Add and scale all domain integrators existing on source_blf to target_blf
+    auto domain_integrators = source_blf->GetDBFI();
+    auto domain_markers = source_blf->GetDBFI_Marker();
+    for (int i = 0; i < domain_integrators->Size(); ++i)
+      target_blf->AddDomainIntegrator(
+          new ScaleIntegrator(*domain_integrators[i], scale_factor, false), *(*domain_markers[i]));
+    // Add and scale all boundary integrators existing on source_blf to target_blf
+    auto boundary_integrators = source_blf->GetBBFI();
+    auto boundary_markers = source_blf->GetBBFI_Marker();
+    for (int i = 0; i < boundary_integrators->Size(); ++i)
+      target_blf->AddBoundaryIntegrator(
+          new ScaleIntegrator(*boundary_integrators[i], scale_factor, false),
+          *(*boundary_markers[i]));
+  }
+
 protected:
   /// Coefficient for timestep scaling
   mfem::ConstantCoefficient _dt_coef;
 
   Moose::MFEM::NamedFieldsMap<Moose::MFEM::NamedFieldsMap<std::vector<std::shared_ptr<MFEMKernel>>>>
       _td_kernels_map;
-  /// Container to store contributions to weak form of the form (F du/dt, v)
+  /// Containers to store contributions to weak form of the form (F du/dt, v)
   Moose::MFEM::NamedFieldsMap<mfem::ParBilinearForm> _td_blfs;
+  Moose::MFEM::NamedFieldsMap<Moose::MFEM::NamedFieldsMap<mfem::ParMixedBilinearForm>>
+      _td_mblfs; // named according to trial variable
 
-private:
+  /// Gridfunctions holding essential constraints from Dirichlet BCs
+  std::vector<std::unique_ptr<mfem::ParGridFunction>> _td_var_ess_constraints;
+
+  /// Map between variable names and their time derivatives
+  const Moose::MFEM::TimeDerivativeMap & _time_derivative_map;
+
   /// Set trial variable names from subset of coupled variables that have an associated test variable.
   virtual void SetTrialVariableNames() override;
 };

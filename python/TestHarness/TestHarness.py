@@ -18,7 +18,7 @@ import getpass
 import argparse
 import typing
 from collections import defaultdict, namedtuple, OrderedDict
-from typing import Any, Tuple
+from typing import Tuple, Optional
 
 from socket import gethostname
 
@@ -224,9 +224,11 @@ class TestHarness:
     # 2 - Added 'abs_zero' key to ValidationNumericData
     VALIDATION_VERSION = 2
 
+    __test__ = False  # prevents pytest collection
+
     @staticmethod
-    def build(argv: list, app_name: str, moose_dir: str, moose_python: str = None,
-              skip_testroot: bool = False) -> None:
+    def build(argv: list, app_name: str, moose_dir: str, moose_python: Optional[str] = None,
+              skip_testroot: bool = False) -> "TestHarness":
         # Cannot skip the testroot if we don't have an application name
         if skip_testroot and not app_name:
             raise ValueError(f'Must provide "app_name" when skip_testroot=True')
@@ -1350,16 +1352,20 @@ class TestHarness:
 
     # Helper tuple for storing information about a cluster
     HPCCluster = namedtuple('HPCCluster', ['scheduler', 'apptainer_modules'])
-    # The modules that we want to load when running in a non-moduled
-    # container on INL HPC
-    inl_modules = ['use.moose', 'moose-dev-container-openmpi/5.0.5_0']
     # Define INL HPC clusters
-    # Bitterroot and windriver share software
-    br_wr_config = HPCCluster(scheduler='slurm', apptainer_modules=inl_modules)
-    hpc_configs = {'sawtooth': HPCCluster(scheduler='pbs',
-                                          apptainer_modules=inl_modules),
-                   'bitterroot': br_wr_config,
-                   'windriver': br_wr_config}
+    sawtooth_config = HPCCluster(
+        scheduler='slurm',
+        apptainer_modules=['container-openmpi/5.0.8-gcc13.4.0-ucx1.19.0']
+    )
+    br_wr_config = HPCCluster(
+        scheduler='slurm',
+        apptainer_modules=['container-openmpi/5.0.5-gcc13.2.0']
+    )
+    hpc_configs = {
+        'sawtooth': sawtooth_config,
+        'bitterroot': br_wr_config,
+        'windriver': br_wr_config
+    }
 
     @staticmethod
     def queryHPCCluster(hostname: str):

@@ -126,41 +126,29 @@ addActionTypes(Syntax & syntax)
   appendMooseObjectTask  ("add_kernel",                   EigenKernel);
   appendMooseObjectTask  ("add_kernel",                   VectorKernel);
   appendMooseObjectTask  ("add_kernel",                   ArrayKernel);
-#ifdef MOOSE_KOKKOS_ENABLED
-  appendMooseObjectTask  ("add_kernel",                   KokkosKernel);
-#endif
+  appendMooseObjectTask  ("add_kernel",                   ADArrayKernel);
 
   registerMooseObjectTask("add_variable",                 MooseVariableBase,         false);
   registerMooseObjectTask("add_aux_variable",             MooseVariableBase,         false);
   registerMooseObjectTask("add_elemental_field_variable", MooseVariableBase,         false);
 
   registerMooseObjectTask("add_nodal_kernel",             NodalKernel,               false);
-#ifdef MOOSE_KOKKOS_ENABLED
-  appendMooseObjectTask  ("add_nodal_kernel",             KokkosNodalKernel);
-#endif
 
   registerMooseObjectTask("add_functor_material",         FunctorMaterial,           false);
   registerMooseObjectTask("add_material",                 MaterialBase,              false);
   appendDeprecatedMooseObjectTask("add_material",         FunctorMaterial);
-#ifdef MOOSE_KOKKOS_ENABLED
-  appendMooseObjectTask  ("add_material",                 KokkosMaterial);
-#endif
 
   registerMooseObjectTask("add_bc",                       BoundaryCondition,         false);
-#ifdef MOOSE_KOKKOS_ENABLED
-  appendMooseObjectTask  ("add_bc",                       KokkosBoundaryCondition);
-#endif
 
   registerMooseObjectTask("add_function",                 Function,                  false);
+
   registerMooseObjectTask("add_distribution",             Distribution,              false);
   registerMooseObjectTask("add_sampler",                  Sampler,                   false);
 
   registerMooseObjectTask("add_aux_kernel",               AuxKernel,                 false);
   appendMooseObjectTask  ("add_aux_kernel",               VectorAuxKernel);
   appendMooseObjectTask  ("add_aux_kernel",               ArrayAuxKernel);
-#ifdef MOOSE_KOKKOS_ENABLED
-  appendMooseObjectTask  ("add_aux_kernel",               KokkosAuxKernel); 
-#endif
+
   registerMooseObjectTask("add_bound",                    Bounds,                    false);
 
   registerMooseObjectTask("add_scalar_kernel",            ScalarKernel,              false);
@@ -305,6 +293,7 @@ addActionTypes(Syntax & syntax)
   registerTask("add_default_steady_state_convergence", true);
 
   registerTask("chain_control_setup", true);
+  registerTask("start_webservercontrol", true);
 
   // Action for setting up the signal-based checkpoint
   registerTask("auto_checkpoint_action", true);
@@ -427,6 +416,7 @@ addActionTypes(Syntax & syntax)
                            "(init_problem)"
                            "(add_control, add_chain_control)"
                            "(chain_control_setup)"
+                           "(start_webservercontrol)"
                            "(check_output)"
                            "(check_integrity)"
                            "(create_application_block)");
@@ -456,6 +446,14 @@ addActionTypes(Syntax & syntax)
   addTaskDependency("add_aux_variable", "add_mfem_fespaces");
   addTaskDependency("add_elemental_field_variable", "add_mfem_fespaces");
   addTaskDependency("add_kernel", "add_mfem_fespaces");
+
+  // add complex kernels
+  registerMooseObjectTask("add_mfem_complex_kernel_components", Kernel, false);
+  registerMooseObjectTask("add_mfem_complex_bc_components", BoundaryCondition, false);
+  addTaskDependency("add_mfem_complex_kernel_components", "add_mfem_fespaces");
+  addTaskDependency("add_mfem_complex_bc_components", "add_mfem_fespaces");
+  addTaskDependency("add_mfem_complex_kernel_components", "add_kernel");
+  addTaskDependency("add_mfem_complex_bc_components", "add_bc");
 
   // set mesh FE space
   registerTask("set_mesh_fe_space", true);
@@ -557,14 +555,6 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntaxTask("AddBCAction", "BCs/*", "add_bc");
 
-#ifdef MOOSE_KOKKOS_ENABLED
-  registerSyntaxTask("AddKokkosKernelAction", "KokkosKernels/*", "add_kernel");
-  registerSyntaxTask("AddKokkosNodalKernelAction", "KokkosNodalKernels/*", "add_nodal_kernel");
-  registerSyntaxTask("AddKokkosKernelAction", "KokkosAuxKernels/*", "add_aux_kernel");
-
-  registerSyntaxTask("AddKokkosBCAction", "KokkosBCs/*", "add_bc");
-#endif
-
   registerSyntax("CreateProblemAction", "Problem");
   registerSyntax("DynamicObjectRegistrationAction", "Problem");
 
@@ -622,11 +612,6 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntax("AddMaterialAction", "Materials/*");
   syntax.registerSyntaxType("Materials/*", "MaterialName");
-
-#ifdef MOOSE_KOKKOS_ENABLED
-  registerSyntax("AddKokkosMaterialAction", "KokkosMaterials/*");
-  syntax.registerSyntaxType("KokkosMaterials/*", "MaterialName");
-#endif
 
   registerSyntax("AddFunctorMaterialAction", "FunctorMaterials/*");
   syntax.registerSyntaxType("FunctorMaterials/*", "MaterialName");
@@ -745,6 +730,10 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 #ifdef MOOSE_MFEM_ENABLED
   registerSyntaxTask("AddMFEMSubMeshAction", "SubMeshes/*", "add_mfem_submeshes");
   registerSyntaxTask("AddMFEMFESpaceAction", "FESpaces/*", "add_mfem_fespaces");
+  registerSyntaxTask(
+      "AddMFEMComplexKernelComponentAction", "Kernels/*/*", "add_mfem_complex_kernel_components");
+  registerSyntaxTask(
+      "AddMFEMComplexBCComponentAction", "BCs/*/*", "add_mfem_complex_bc_components");
   registerSyntaxTask("AddMFEMPreconditionerAction", "Preconditioner/*", "add_mfem_preconditioner");
   registerSyntaxTask("AddMFEMSolverAction", "Solver", "add_mfem_solver");
 #endif
