@@ -16,6 +16,7 @@ InputParameters
 InterfaceMeshCut2DUserObject::validParams()
 {
   InputParameters params = InterfaceMeshCutUserObjectBase::validParams();
+  params.addRequiredParam<unsigned int>("elementid", "The ID of the element where we monitor");
   params.addClassDescription("A userobject to cut a 2D mesh using a 1D cutter mesh.");
   return params;
 }
@@ -78,6 +79,8 @@ InterfaceMeshCut2DUserObject::cutElementByGeometry(const Elem * elem,
                                                    std::vector<Xfem::CutEdge> & cut_edges,
                                                    std::vector<Xfem::CutNode> & cut_nodes) const
 {
+  return false;
+
   mooseAssert(elem->dim() == 2, "Dimension of element to be cut must be 2");
 
   bool elem_cut = false;
@@ -85,6 +88,7 @@ InterfaceMeshCut2DUserObject::cutElementByGeometry(const Elem * elem,
   for (const auto & cut_elem : _cutter_mesh->element_ptr_range())
   {
     unsigned int n_sides = elem->n_sides();
+    
 
     for (unsigned int i = 0; i < n_sides; ++i)
     {
@@ -94,14 +98,34 @@ InterfaceMeshCut2DUserObject::cutElementByGeometry(const Elem * elem,
 
       const Node * node1 = curr_side->node_ptr(0);
       const Node * node2 = curr_side->node_ptr(1);
+
       Real seg_int_frac = 0.0;
 
       const std::pair<Point, Point> elem_endpoints(cut_elem->node_ref(0), cut_elem->node_ref(1));
 
+      Real _probed_elem_id = getParam<unsigned int>("elementid");
+
+      // std::cout<<elem->id()<< std::endl;
+
+      if (elem->id() == _probed_elem_id)
+      {
+        std::cout<<"Printing info for element "<<_probed_elem_id<<" - Side "<<i+1<< std::endl;
+        node1->print_info();
+        node2->print_info();
+
+        std::cout<<"Cut mesh info"<< std::endl;
+        std::cout<<cut_elem->node_ref(0)<< std::endl;
+        std::cout<<cut_elem->node_ref(1)<< std::endl;
+      }
+
       if (Xfem::intersectSegmentWithCutLine(*node1, *node2, elem_endpoints, 1.0, seg_int_frac))
       {
+        std::cout<<"Reached Cutting"<< std::endl;
+
         if (seg_int_frac > Xfem::tol && seg_int_frac < 1.0 - Xfem::tol)
         {
+          std::cout<<"If branch" << n_sides << std::endl;
+
           elem_cut = true;
           Xfem::CutEdge mycut;
           mycut._id1 = node1->id();
@@ -112,6 +136,8 @@ InterfaceMeshCut2DUserObject::cutElementByGeometry(const Elem * elem,
         }
         else if (seg_int_frac < Xfem::tol)
         {
+          std::cout<<"Elif branch" << n_sides << std::endl;
+
           elem_cut = true;
           Xfem::CutNode mycut;
           mycut._id = node1->id();

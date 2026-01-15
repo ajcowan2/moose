@@ -25,6 +25,9 @@ NodeValueAtXFEMInterface::validParams()
   params.addParam<UserObjectName>(
       "interface_mesh_cut_userobject",
       "Name of InterfaceMeshCutUserObject that provides cut locations to this UserObject.");
+  params.addParam<UserObjectName>(
+      "level_set_cut_userobject",
+      "Name of LevelSetCutUO that provides cut locations to this UserObject.");
   params.addRequiredParam<VariableName>(
       "level_set_var", "The name of level set variable used to represent the interface");
   params.addClassDescription("Obtain field values and gradients on the interface.");
@@ -53,11 +56,16 @@ NodeValueAtXFEMInterface::initialize()
   const UserObject * uo =
       &(_fe_problem.getUserObjectBase(getParam<UserObjectName>("interface_mesh_cut_userobject")));
 
+  const UserObject * uo_ls =
+      &(_fe_problem.getUserObjectBase(getParam<UserObjectName>("level_set_cut_userobject")));
+
   if (dynamic_cast<const InterfaceMeshCutUserObjectBase *>(uo) == nullptr)
     mooseError("UserObject casting to InterfaceMeshCutUserObjectBase in NodeValueAtXFEMInterface");
 
   _mesh_cut = dynamic_cast<const InterfaceMeshCutUserObjectBase *>(uo);
-  _elem_pairs = _xfem->getXFEMCutElemPairs(_xfem->getGeometricCutID(_mesh_cut));
+  _level_set_cut = dynamic_cast<const LevelSetCutUserObject *>(uo_ls);
+
+  _elem_pairs = _xfem->getXFEMCutElemPairs(_xfem->getGeometricCutID(_level_set_cut));
 }
 
 void
@@ -140,6 +148,8 @@ NodeValueAtXFEMInterface::getElemContainingPoint(const Node & p, bool positive_l
 
   bool positive = false;
 
+  // std::cout << "elem1 = " << *elem1 << std::endl;
+
   if (_xfem->isPointInsidePhysicalDomain(elem1, *node))
   {
     if (ls_node_value > 0.0)
@@ -153,8 +163,11 @@ NodeValueAtXFEMInterface::getElemContainingPoint(const Node & p, bool positive_l
 
   const Elem * elem2 = nullptr;
   bool found = false;
+  // std::cout << "_elem_pairs size = " << _elem_pairs->size() << std::endl;
   for (auto & pair : *_elem_pairs)
   {
+    // std::cout << "elem 1 = " << *(pair.first) << std::endl;
+    // std::cout << "elem 2 = " << *(pair.second) << std::endl;
     if (pair.first == elem1)
     {
       elem2 = pair.second;

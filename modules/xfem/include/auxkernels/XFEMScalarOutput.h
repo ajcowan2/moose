@@ -13,7 +13,6 @@
 
 class XFEM;
 class FEProblemBase;
-class Elem;
 
 /**
  * Projects a scalar material property to the kept fragment of cut elements via

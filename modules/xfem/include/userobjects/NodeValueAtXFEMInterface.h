@@ -12,6 +12,7 @@
 #include "GeneralUserObject.h"
 #include "ElementPairLocator.h"
 #include "MooseVariableFE.h"
+#include "LevelSetCutUserObject.h"
 
 class XFEM;
 class InterfaceMeshCutUserObjectBase;
@@ -90,6 +91,9 @@ protected:
 
   /// Pointer to LineSegmentCutSetUserObject object
   const InterfaceMeshCutUserObjectBase * _mesh_cut;
+
+  /// Pointer to LevelSetCutUserObject object
+   const LevelSetCutUserObject * _level_set_cut;
 
   /// Pointer to MooseVariableFEBase object
   MooseVariableFEBase * _var;
