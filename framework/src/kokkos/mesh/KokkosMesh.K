@@ -13,9 +13,7 @@
 
 #include "libmesh/reference_elem.h"
 
-namespace Moose
-{
-namespace Kokkos
+namespace Moose::Kokkos
 {
 
 void
@@ -23,6 +21,8 @@ Mesh::update()
 {
   initMap();
   initElement();
+
+  _initialized = true;
 }
 
 void
@@ -57,11 +57,15 @@ Mesh::initMap()
 
       for (const auto & node : elem->node_ref_range())
       {
-        if (!_maps->_local_node_id_mapping.count(&node))
-          _maps->_local_node_id_mapping[&node] = _maps->_local_node_id_mapping.size();
+        auto [it, emplaced] = _maps->_local_node_id_mapping.try_emplace(&node);
 
+        if (emplaced)
+          it->second = _maps->_local_node_id_mapping.size() - 1;
+
+        // A node can belong to multiple subdomains
         if (node.processor_id() == _mesh.processor_id())
-          _maps->_subdomain_node_ids[subdomain].insert(_maps->_local_node_id_mapping[&node]);
+          for (auto subdomain : _mesh.getNodeBlockIds(node))
+            _maps->_subdomain_node_ids[subdomain].insert(it->second);
       }
     }
   }
@@ -209,5 +213,4 @@ Mesh::getContiguousNodeID(const Node * node) const
   return _maps->_local_node_id_mapping.at(node);
 }
 
-} // namespace Kokkos
-} // namespace Moose
+} // namespace Moose::Kokkos

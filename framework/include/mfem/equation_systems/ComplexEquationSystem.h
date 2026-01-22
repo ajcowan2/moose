@@ -1,6 +1,7 @@
 #ifdef MOOSE_MFEM_ENABLED
 
 #pragma once
+
 #include "libmesh/ignore_warnings.h"
 #include "mfem/miniapps/common/pfem_extras.hpp"
 #include "libmesh/restore_warnings.h"
@@ -48,13 +49,15 @@ public:
   /// Add complex essential BCs
   void AddComplexEssentialBCs(std::shared_ptr<MFEMComplexEssentialBC> bc);
 
-  /// Form linear system, with essential boundary conditions accounted for
-  virtual void FormSystem(mfem::OperatorHandle & op,
-                          mfem::BlockVector & trueX,
-                          mfem::BlockVector & trueRHS) override;
+  /// Form matrix-free representation of system operator.
+  /// Used when EquationSystem assembly level is set to 'FULL', 'ELEMENT', 'PARTIAL', or 'NONE'.
+  virtual void FormSystemOperator(mfem::OperatorHandle & op,
+                                  mfem::BlockVector & trueX,
+                                  mfem::BlockVector & trueRHS) override;
 
-  /// Form linear system with legacy assembly
-  virtual void FormLegacySystem(mfem::OperatorHandle & op,
+  /// Form matrix representation of system operator as a HypreParMatrix.
+  /// Used when EquationSystem assembly level is set to 'LEGACY'.
+  virtual void FormSystemMatrix(mfem::OperatorHandle & op,
                                 mfem::BlockVector & trueX,
                                 mfem::BlockVector & trueRHS) override;
 
@@ -131,7 +134,7 @@ ComplexEquationSystem::ApplyDomainBLFIntegrators(
       mfem::BilinearFormIntegrator * integ_real = kernel->getRealBFIntegrator();
       mfem::BilinearFormIntegrator * integ_imag = kernel->getImagBFIntegrator();
 
-      if (integ_real != nullptr || integ_imag != nullptr)
+      if (integ_real || integ_imag)
       {
         kernel->isSubdomainRestricted()
             ? form->AddDomainIntegrator(
@@ -156,7 +159,7 @@ ComplexEquationSystem::ApplyDomainLFIntegrators(
       mfem::LinearFormIntegrator * integ_real = kernel->getRealLFIntegrator();
       mfem::LinearFormIntegrator * integ_imag = kernel->getImagLFIntegrator();
 
-      if (integ_real != nullptr && integ_imag != nullptr)
+      if (integ_real || integ_imag)
       {
         kernel->isSubdomainRestricted()
             ? form->AddDomainIntegrator(
@@ -185,7 +188,7 @@ ComplexEquationSystem::ApplyBoundaryBLFIntegrators(
       mfem::BilinearFormIntegrator * integ_real = bc->getRealBFIntegrator();
       mfem::BilinearFormIntegrator * integ_imag = bc->getImagBFIntegrator();
 
-      if (integ_real != nullptr || integ_imag != nullptr)
+      if (integ_real || integ_imag)
       {
         bc->isBoundaryRestricted()
             ? form->AddBoundaryIntegrator(
@@ -211,7 +214,7 @@ ComplexEquationSystem::ApplyBoundaryLFIntegrators(
       mfem::LinearFormIntegrator * integ_real = bc->getRealLFIntegrator();
       mfem::LinearFormIntegrator * integ_imag = bc->getImagLFIntegrator();
 
-      if (integ_real != nullptr && integ_imag != nullptr)
+      if (integ_real || integ_imag)
       {
         bc->isBoundaryRestricted()
             ? form->AddBoundaryIntegrator(

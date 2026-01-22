@@ -41,8 +41,8 @@ num_cells = 40
   [axial_heat_rate]
     type = ParsedFunction
     expression = '(pi/2)*sin(pi*z/L)'
-    vars = 'L'
-    vals = '${length}'
+    symbol_names = 'L'
+    symbol_values = '${length}'
   []
 []
 
@@ -65,9 +65,8 @@ num_cells = 40
   segregated = false
   verbose_subchannel = true
   interpolation_scheme = upwind
-
-  # Heat Transfer Correlations
-  pin_htc_correlation = 'gnielinski'
+  # Heat Transfer Correlation
+  pin_HTC_closure = 'gnielinski'
   # friction model
   friction_closure = 'cheng'
 []
@@ -75,6 +74,9 @@ num_cells = 40
 [SCMClosures]
   [cheng]
     type = SCMFrictionUpdatedChengTodreas
+  []
+  [gnielinski]
+    type = SCMHTCGnielinski
   []
 []
 
