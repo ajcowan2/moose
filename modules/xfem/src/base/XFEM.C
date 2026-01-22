@@ -1764,17 +1764,10 @@ XFEM::getPhysicalVolumeFraction(const Elem * elem) const
   return phys_volfrac;
 }
 
-<<<<<<< HEAD
 Point
 XFEM::getPhysicalCenterPoint(const Elem * elem) const
 {
   Point cp;
-=======
-Real
-XFEM::getCutPlaneArea(const Elem * elem) const
-{
-  Real area = 0.0;
->>>>>>> 04e0ed7579 (ls multiapp)
   std::map<unique_id_type, XFEMCutElem *>::const_iterator it;
   it = _cut_elem_map.find(elem->unique_id());
   if (it != _cut_elem_map.end())
@@ -1783,19 +1776,30 @@ XFEM::getCutPlaneArea(const Elem * elem) const
     const EFAElement * EFAelem = xfce->getEFAElement();
     if (EFAelem->isPartial())
     { // exclude the full crack tip elements
-<<<<<<< HEAD
       cp = xfce->getFragmentCenterPoint();
     }
   }
 
   return cp;
-=======
+}
+
+Real
+XFEM::getCutPlaneArea(const Elem * elem) const
+{
+  Real area = 0.0;
+  std::map<unique_id_type, XFEMCutElem *>::const_iterator it;
+  it = _cut_elem_map.find(elem->unique_id());
+  if (it != _cut_elem_map.end())
+  {
+    XFEMCutElem * xfce = it->second;
+    const EFAElement * EFAelem = xfce->getEFAElement();
+    if (EFAelem->isPartial())
+    { // exclude the full crack tip elements
       area = xfce->getCutPlaneArea();
     }
   }
 
   return area;
->>>>>>> 04e0ed7579 (ls multiapp)
 }
 
 bool

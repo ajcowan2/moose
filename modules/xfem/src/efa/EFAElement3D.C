@@ -1011,10 +1011,7 @@ EFAElement3D::createChild(const std::set<EFAElement *> & CrackTipElements,
       EFAPoint orig(0.0, 0.0, 0.0);
 
       std::vector<EFAPoint> normal_v;
-<<<<<<< HEAD
-=======
       std::vector<EFAPoint> orig_v;
->>>>>>> 04e0ed7579 (ls multiapp)
 
       if (cut_plane_nodes.size())
       {
@@ -1053,16 +1050,11 @@ EFAElement3D::createChild(const std::set<EFAElement *> & CrackTipElements,
           orig_v.push_back((center));
         }
 
+        EFAPoint normal = EFAPoint(0.0, 0.0, 0.0);
+
         for (unsigned int i = 0; i < cut_plane_points.size(); ++i)
         {
           unsigned int iplus1 = i < cut_plane_points.size() - 1 ? i + 1 : 0;
-<<<<<<< HEAD
-          unsigned int iminus1 = i == 0 ? cut_plane_points.size() - 1 : i - 1;
-          EFAPoint ray1 = cut_plane_points[iminus1] - cut_plane_points[i];
-          EFAPoint ray2 = cut_plane_points[i] - cut_plane_points[iplus1];
-          normal_v.push_back(ray1.cross(ray2));
-        }
-=======
           EFAPoint ray1 = cut_plane_points[i] - orig;
           EFAPoint ray2 = cut_plane_points[iplus1] - orig;
           normal += ray1.cross(ray2);
@@ -1070,7 +1062,6 @@ EFAElement3D::createChild(const std::set<EFAElement *> & CrackTipElements,
         }
         normal /= cut_plane_points.size();
         Xfem::normalizePoint(normal);
->>>>>>> 04e0ed7579 (ls multiapp)
 
         for (unsigned int i = 0; i < normal_v.size(); ++i)
           Xfem::normalizePoint(normal_v[i]);
@@ -1083,19 +1074,6 @@ EFAElement3D::createChild(const std::set<EFAElement *> & CrackTipElements,
         p = _local_node_coor[j];
         EFAPoint origin_to_point = p - orig;
 
-<<<<<<< HEAD
-        bool node_outside_fragment = false;
-        for (unsigned int k = 0; k < normal_v.size(); ++k)
-          if (origin_to_point * normal_v[k] > Xfem::tol)
-          {
-            node_outside_fragment = true;
-            break;
-          }
-
-        if (_fragments.size() == 1 && !shouldDuplicateForCrackTip(CrackTipElements))
-          childElem->setNode(j, _nodes[j]); // inherit parent's node
-        else if (!node_outside_fragment)
-=======
         bool use_temp = false;
         for (unsigned int k = 0; k < normal_v.size(); ++k)
           if (origin_to_point * normal_v[k] > Xfem::tol)
@@ -1127,7 +1105,6 @@ EFAElement3D::createChild(const std::set<EFAElement *> & CrackTipElements,
         // else if (origin_to_point * normal < Xfem::tol)
         else if (!use_temp)
         {
->>>>>>> 04e0ed7579 (ls multiapp)
           childElem->setNode(j, _nodes[j]); // inherit parent's node
         }
         else // parent element's node is not in fragment

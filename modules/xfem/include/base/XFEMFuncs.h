@@ -18,11 +18,7 @@ using namespace libMesh;
 
 namespace Xfem
 {
-<<<<<<< HEAD
-static const double tol = 1.0e-12;
-=======
 static const double tol = 1.0e-14;
->>>>>>> 04e0ed7579 (ls multiapp)
 
 void dunavant_rule2(const Real * wts,
                     const Real * a,

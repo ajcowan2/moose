@@ -225,7 +225,7 @@
 
 [Outputs]
   csv = true
-  interval = 1
+  # interval = 1
   execute_on = timestep_end
   exodus = true
   file_base = isolated_pit_coarse_test

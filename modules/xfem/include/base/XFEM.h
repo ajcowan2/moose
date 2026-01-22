@@ -183,11 +183,9 @@ public:
    */
   Real getPhysicalVolumeFraction(const Elem * elem) const;
 
-<<<<<<< HEAD
   Point getPhysicalCenterPoint(const Elem * elem) const;
-=======
+
   Real getCutPlaneArea(const Elem * elem) const;
->>>>>>> 04e0ed7579 (ls multiapp)
 
   /**
    * Return true if the point is inside the element physical domain

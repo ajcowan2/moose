@@ -168,5 +168,5 @@
 [Outputs]
   csv = true
   exodus = true
-  interval = 1
+  # interval = 1
 []
