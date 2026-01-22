@@ -26,6 +26,7 @@ class TestCIVETStore(TestCase):
         """Test TestDataFilter."""
         self.assertEqual(TestDataFilter.ALL.value, "all")
         self.assertEqual(TestDataFilter.HPC.value, "hpc")
+        self.assertEqual(TestDataFilter.MAX_MEMORY.value, "max_memory")
         self.assertEqual(TestDataFilter.STATUS.value, "status")
         self.assertEqual(TestDataFilter.TESTER.value, "tester")
         self.assertEqual(TestDataFilter.TIMING.value, "timing")
@@ -44,7 +45,7 @@ class TestCIVETStore(TestCase):
         # Doesn't do a conversion
         as_set = set([test_filter])
         same = filter_as_iterable(as_set)
-        self.assertEqual(id(as_set), id(same))
+        self.assertIs(as_set, same)
 
     def test_has_all_filter(self):
         """Test has_all_filter()."""

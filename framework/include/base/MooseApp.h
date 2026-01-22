@@ -17,12 +17,6 @@
 #include <c10/core/DeviceType.h>
 #endif
 
-#ifdef MOOSE_MFEM_ENABLED
-#include "libmesh/ignore_warnings.h"
-#include <mfem.hpp>
-#include "libmesh/restore_warnings.h"
-#endif
-
 // MOOSE includes
 #include "Moose.h"
 #include "Builder.h"
@@ -1113,12 +1107,6 @@ public:
 
 #ifdef MOOSE_KOKKOS_ENABLED
   /**
-   * Get whether there is any Kokkos object added by actions
-   * @returns Whether there is any Kokkos object added by actions
-   */
-  bool hasKokkosObjects() const { return _has_kokkos_objects; }
-
-  /**
    * Allocate Kokkos memory pool
    * @param size The memory pool size in the number of bytes
    * @param ways The number of parallel ways
@@ -1643,11 +1631,6 @@ private:
    * Flag whether every process has an associated Kokkos GPU
    */
   bool _has_kokkos_gpus = false;
-
-  /**
-   * Flag whether there is any Kokkos object added by actions
-   */
-  bool _has_kokkos_objects = false;
 #endif
 };
 

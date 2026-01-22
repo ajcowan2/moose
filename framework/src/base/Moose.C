@@ -131,12 +131,15 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_variable",                 MooseVariableBase,         false);
   registerMooseObjectTask("add_aux_variable",             MooseVariableBase,         false);
   registerMooseObjectTask("add_elemental_field_variable", MooseVariableBase,         false);
+  registerMooseObjectTask("add_variables_physics",        MooseVariableBase,         false);
 
   registerMooseObjectTask("add_nodal_kernel",             NodalKernel,               false);
 
   registerMooseObjectTask("add_functor_material",         FunctorMaterial,           false);
   registerMooseObjectTask("add_material",                 MaterialBase,              false);
   appendDeprecatedMooseObjectTask("add_material",         FunctorMaterial);
+  registerMooseObjectTask("add_materials_physics",        FunctorMaterial,           false);
+  appendMooseObjectTask  ("add_materials_physics",        MaterialBase);
 
   registerMooseObjectTask("add_bc",                       BoundaryCondition,         false);
 
@@ -169,8 +172,10 @@ addActionTypes(Syntax & syntax)
 
   registerMooseObjectTask("add_ic",                       InitialCondition,          false);
   appendMooseObjectTask  ("add_ic",                       ScalarInitialCondition);
-
   registerMooseObjectTask("add_fv_ic",                    FVInitialCondition,        false);
+  registerMooseObjectTask("add_ics_physics",              InitialCondition,          false);
+  appendMooseObjectTask  ("add_ics_physics",              FVInitialCondition);
+  appendMooseObjectTask  ("add_ics_physics",              ScalarInitialCondition);
 
   registerMooseObjectTask("add_damper",                   Damper,                    false);
   registerMooseObjectTask("setup_predictor",              Predictor,                 false);
@@ -187,6 +192,7 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_mesh_division",            MeshDivision,              false);
   registerMooseObjectTask("add_user_object",              UserObject,                false);
   appendMooseObjectTask  ("add_user_object",              Postprocessor);
+
   appendDeprecatedMooseObjectTask("add_user_object",      Corrector);
   registerMooseObjectTask("add_corrector",                Corrector,                 false);
   appendDeprecatedMooseObjectTask("add_user_object",      MeshModifier);
@@ -195,6 +201,7 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_postprocessor",            Postprocessor,             false);
   registerMooseObjectTask("add_vector_postprocessor",     VectorPostprocessor,       false);
   registerMooseObjectTask("add_reporter",                 Reporter,                  false);
+
   registerMooseObjectTask("add_positions",                Positions,                 false);
   registerMooseObjectTask("add_times",                    Times,                     false);
 
@@ -355,6 +362,7 @@ addActionTypes(Syntax & syntax)
                            "(setup_predictor)"
                            "(add_aux_variable, add_variable, add_elemental_field_variable,"
                            " add_external_aux_variables)"
+                           "(add_variables_physics)" // physics can skip adding variables if they already exist
                            "(add_mortar_variable)"
                            "(setup_variable_complete)"
                            "(check_integrity_early_physics)"  // checks that systems and variables are consistent
@@ -375,6 +383,7 @@ addActionTypes(Syntax & syntax)
                            "(setup_adaptivity)"
                            "(set_adaptivity_options)"
                            "(add_ic, add_fv_ic)"
+                           "(add_ics_physics)" // physics can skip adding initial conditions if they already exist
                            "(add_constraint)"
                            "(add_times)"
                            "(add_time_stepper, add_time_steppers)"
@@ -391,6 +400,7 @@ addActionTypes(Syntax & syntax)
                            "(add_material)"
                            "(add_master_action_material)"
                            "(add_functor_material)"
+                           "(add_materials_physics)"
                            "(setup_projected_properties)"
                            "(add_output_aux_variables)"
                            "(add_output)"
@@ -688,8 +698,10 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   // UserObject and some derived classes
   registerSyntax("AddUserObjectAction", "UserObjects/*");
   syntax.registerSyntaxType("UserObjects/*", "UserObjectName");
+
   registerSyntax("AddCorrectorAction", "Correctors/*");
   syntax.registerSyntaxType("Correctors/*", "UserObjectName");
+
   registerSyntax("AddMeshModifiersAction", "MeshModifiers/*");
   syntax.registerSyntaxType("MeshModifiers/*", "UserObjectName");
 

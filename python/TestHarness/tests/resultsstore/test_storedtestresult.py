@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 
 from bson.objectid import ObjectId
 from mock import patch
+from moosepy.perfgraph import PerfGraph
 from TestHarness.resultsstore.civetstore import CIVETStore
 from TestHarness.resultsstore.storedresult import StoredResult
 from TestHarness.resultsstore.storedtestresult import (
@@ -610,9 +611,8 @@ class TestResultsStoredResults(ResultsStoreTestCase):
             orig_tester = data["tester"]
             orig_perf_graph = orig_tester.get("json_metadata", {}).get("perf_graph")
             perf_graph = test.get_perf_graph()
-            self.assertEqual(perf_graph, orig_perf_graph)
             if orig_perf_graph:
-                self.assertIsInstance(perf_graph, dict)
+                self.assertIsInstance(perf_graph, PerfGraph)
             else:
                 self.assertIsNone(perf_graph)
 
@@ -625,6 +625,26 @@ class TestResultsStoredResults(ResultsStoreTestCase):
         test, _ = self.get_stored_test_result(TestDataFilter.HPC)
         with self.assertRaisesRegex(ValueError, "TESTER"):
             test.get_perf_graph()
+
+    def test_get_max_memory(self):
+        """Test get_max_memory()."""
+        tests = self.get_stored_test_results()
+
+        max_memory = 1234
+        for test, data in tests:
+            test.result.data["testharness"]["version"] = 9
+            test.data["max_memory"] = max_memory
+            self.assertEqual(test.max_memory, max_memory)
+
+            del test.data["max_memory"]
+            self.assertIsNone(test.max_memory)
+
+    def test_get_max_memory_old_version(self):
+        """Test get_max_memory() with version < 9 (before available)."""
+        tests = self.get_stored_test_results()
+        for test, data in tests:
+            test.result.data["testharness"]["version"] = 2
+            self.assertIsNone(test.max_memory)
 
     def run_test_serialize_deserialize(self, **kwargs):
         """
