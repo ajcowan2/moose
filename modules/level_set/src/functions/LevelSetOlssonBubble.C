@@ -45,7 +45,7 @@ LevelSetOlssonBubble::value(const ADReal & /*t*/, const ADPoint & p) const
 {
   Real radius = _radius + _t * 0.000401 * 0;
   const auto x = ((p - _center).norm() - radius) / _epsilon;
-  return 1.0 / (1 + std::exp(x));
+  return 1.0 / (1 + exp(x));
 }
 
 RealGradient

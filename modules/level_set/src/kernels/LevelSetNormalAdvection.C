@@ -30,5 +30,5 @@ LevelSetNormalAdvection::LevelSetNormalAdvection(const InputParameters & paramet
 ADReal
 LevelSetNormalAdvection::precomputeQpResidual()
 {
-  return -_velocity[_qp] * std::sqrt(_grad_u[_qp] * _grad_u[_qp] + 1.0e-50);
+  return -_velocity[_qp] * sqrt(_grad_u[_qp] * _grad_u[_qp] + 1.0e-50);
 }

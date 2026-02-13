@@ -31,7 +31,7 @@ ADRealVectorValue
 LevelSetNormalTimeDerivativeSUPG::precomputeQpResidual()
 {
   ADRealVectorValue velocity =
-      _velocity[_qp] * _grad_u[_qp] / std::sqrt(_grad_u[_qp] * _grad_u[_qp] + 1.0e-50);
+      _velocity[_qp] * _grad_u[_qp] / sqrt(_grad_u[_qp] * _grad_u[_qp] + 1.0e-50);
 
   ADReal tau = _current_elem->hmin() /
                (2 * (velocity + RealVectorValue(libMesh::TOLERANCE * libMesh::TOLERANCE)).norm());

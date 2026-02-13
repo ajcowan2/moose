@@ -86,5 +86,7 @@ ExtendVelocityLevelSetAux::computeValue()
 
   // return std::abs(vel);
 
-  return -0.0113 / (1 + exp(-0.1 * (_values_positive_level_set_side[index] - 920)));
+  // return -0.0113 / (1 + exp(-0.1 * (_values_positive_level_set_side[index] - 920)));
+
+  return -38.232 * exp(-11342.3 / 1400) * 1.1574e-11;
 }

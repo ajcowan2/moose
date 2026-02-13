@@ -52,7 +52,7 @@ LevelSetOlssonTwoBubbles::value(const ADReal & /*t*/, const ADPoint & p) const
   const auto x1 = ((p - _center1).norm() - _radius1) / _epsilon;
   const auto x2 = ((p - _center2).norm() - _radius2) / _epsilon;
   const auto x = std::min(x1, x2);
-  return 1.0 / (1 + std::exp(x));
+  return 1.0 / (1 + exp(x));
 }
 
 RealGradient

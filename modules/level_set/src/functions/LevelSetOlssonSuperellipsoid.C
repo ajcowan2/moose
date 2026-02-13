@@ -58,13 +58,13 @@ LevelSetOlssonSuperellipsoid::value(const ADReal & /*t*/, const ADPoint & p) con
   ADReal dist = (_center - p).norm();
   ADPoint dist_vec = p - _center;
 
-  ADReal rmn = (std::pow(std::abs(dist_vec(0) / dist / _a), _n) +
-                std::pow(std::abs(dist_vec(1) / dist / _b), _n) +
-                std::pow(std::abs(dist_vec(2) / dist / _c), _n));
+  ADReal rmn = (pow(abs(dist_vec(0) / dist / _a), _n) +
+                pow(abs(dist_vec(1) / dist / _b), _n) +
+                pow(abs(dist_vec(2) / dist / _c), _n));
   // Then calculate r from rmn
-  ADReal r = std::pow(rmn, (-1.0 / _n));
+  ADReal r = pow(rmn, (-1.0 / _n));
 
-  return 1.0 / (1 + std::exp((dist - r) / _epsilon));
+  return 1.0 / (1 + exp((dist - r) / _epsilon));
 }
 
 RealGradient

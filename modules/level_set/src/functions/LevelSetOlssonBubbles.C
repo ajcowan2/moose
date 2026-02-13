@@ -58,7 +58,7 @@ LevelSetOlssonBubbles::value(const ADReal & /*t*/, const ADPoint & p) const
     if (x < min)
       min = x;
   }
-  return 1.0 / (1 + std::exp(min));
+  return 1.0 / (1 + exp(min));
 }
 
 RealGradient
