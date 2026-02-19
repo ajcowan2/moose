@@ -178,8 +178,8 @@ XFEMDirichletBC::computeQpResidual(Moose::DGResidualType type)
   // C_elem = std::min(C_elem, 1e5);
   // C_neigh = std::min(C_neigh, 1e5);
 
-  C_elem = 1.0;
-  C_neigh = 1.0;
+  Real C_elem = 1.0;
+  Real C_neigh = 1.0;
 
   // std::cout << "_u[_qp] = " << _u[_qp] << ", _u_neighbor[_qp] = " << _u_neighbor[_qp]
   //           << ", area = " << area << std::endl;
