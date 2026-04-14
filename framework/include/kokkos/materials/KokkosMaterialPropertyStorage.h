@@ -82,6 +82,8 @@ public:
    * @param declarer The Kokkos material declaring the property, nullptr if simply reserving the
    * @param dims The vector containing the size of each dimension
    * @param bnd Whether the property is a face property
+   * @param on_demand Whether the property is an on-demand property
+   * @param constant_option Whether the property is constant on element or subdomain
    * @param shell The managed pointer containing the instance of the property
    * @returns The material property
    */
@@ -90,6 +92,8 @@ public:
                                                const ::MaterialBase * declarer,
                                                const std::vector<unsigned int> & dims,
                                                const bool bnd,
+                                               const bool on_demand,
+                                               const PropertyConstantOption constant_option,
                                                std::shared_ptr<MaterialPropertyBase> shell);
   /**
    * Get a material property
@@ -140,7 +144,7 @@ private:
   /**
    * Function pointer maps for load/store
    */
-  ///{@
+  ///@{
   static std::unordered_map<std::type_index, PropertyStore> _store_functions;
   static std::unordered_map<std::type_index, PropertyLoad> _load_functions;
   ///@}

@@ -16,8 +16,7 @@
 #endif
 
 #include "KokkosAssembly.h"
-
-#include "MooseMesh.h"
+#include "KokkosMesh.h"
 
 namespace Moose::Kokkos
 {
@@ -100,6 +99,7 @@ MaterialProperty<T, dimension>::shallowCopy(const MaterialProperty<T, dimension>
   _record = property._record;
   _id = property._id;
   _default = property._default;
+  _constant_option = property._constant_option;
 
   _reference = property._reference;
   _data = property._data;
@@ -108,31 +108,47 @@ MaterialProperty<T, dimension>::shallowCopy(const MaterialProperty<T, dimension>
 
 template <typename T, unsigned int dimension>
 void
-MaterialProperty<T, dimension>::allocate(const MooseMesh & mesh,
+MaterialProperty<T, dimension>::allocate(const Mesh & mesh,
                                          const Assembly & assembly,
                                          const std::set<SubdomainID> & subdomains,
                                          const bool bnd,
                                          StorageKey)
 {
   if (!_data.isAlloc())
-    _data.create(mesh.meshSubdomains().size());
+    _data.create(mesh.getNumSubdomains());
+
+  if (!_constant_option.isAlloc())
+  {
+    _constant_option.create(mesh.getNumSubdomains());
+    _constant_option = PropertyConstantOption::NONE;
+  }
 
   for (const auto subdomain : subdomains)
   {
-    auto sid = mesh.getKokkosMesh()->getContiguousSubdomainID(subdomain);
+    auto sid = mesh.getContiguousSubdomainID(subdomain);
+    auto constant_option = libmesh_map_find(_record->constant_option, subdomain);
 
     std::vector<dof_id_type> n;
 
     for (unsigned int i = 0; i < dimension; ++i)
-      n.push_back(_record->dims[i]);
+      n.push_back(libmesh_map_find(_record->dims, subdomain)[i]);
 
-    n.push_back(bnd ? assembly.getNumFaceQps(sid) : assembly.getNumQps(sid));
+    if (constant_option == PropertyConstantOption::NONE)
+      n.push_back(bnd ? assembly.getNumFaceQps(sid) : assembly.getNumQps(sid));
+    else if (constant_option == PropertyConstantOption::ELEMENT)
+      n.push_back(bnd ? assembly.getElemFacePropertySize(sid)
+                      : mesh.getNumSubdomainLocalElements(subdomain));
+    else
+      n.push_back(1);
 
     if (!_data[sid].isAlloc())
       _data[sid].createDevice(n);
+
+    _constant_option[sid] = constant_option;
   }
 
   _data.copyToDevice();
+  _constant_option.copyToDevice();
 }
 
 template <typename T, unsigned int dimension>

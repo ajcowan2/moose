@@ -1,3 +1,7 @@
+# Mixed heat transfer problem.
+# Based on Firedrake Irksome demo_mixed_heat example:
+# https://www.firedrakeproject.org/Irksome/demos/demo_mixed_heat.py.html
+
 [Mesh]
   type = MFEMMesh
   file = ../mesh/square.e
@@ -16,7 +20,7 @@
   [L2FESpace]
     type = MFEMScalarFESpace
     fec_type = L2
-    fec_order = CONSTANT
+    fec_order = FIRST
   []
 []
 
@@ -56,20 +60,20 @@
 []
 
 [BCs]
-  [right]
+  [gamma_T_right]
     type = MFEMVectorFEBoundaryFluxIntegratedBC
     variable = time_integrated_heat_flux
     coefficient = 0.0
     boundary = 2
   []
-  [left]
+  [gamma_T_left]
     type = MFEMVectorFEBoundaryFluxIntegratedBC
     variable = time_integrated_heat_flux
     coefficient = -1.0
     boundary = 4
   []
-  [topbottom]
-    type = MFEMVectorDirichletBC
+  [gamma_h_topbottom]
+    type = MFEMVectorNormalDirichletBC
     variable = time_integrated_heat_flux
     vector_coefficient = '0.0 0.0'
     boundary = '1 3'

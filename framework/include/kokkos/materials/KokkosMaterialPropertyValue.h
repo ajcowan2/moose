@@ -20,49 +20,27 @@ template <typename T, unsigned int dimension>
 KOKKOS_FUNCTION
 MaterialPropertyValueBase<T, dimension>::MaterialPropertyValueBase(
     const MaterialProperty<T, dimension> & property, const Datum & datum, const unsigned int qp)
-  : _qp(datum.qpOffset() + qp),
+  : _idx(property._default ? libMesh::invalid_uint
+                           : datum.propertyIdx(property._constant_option[datum.subdomain()], qp)),
     _data(property._default ? nullptr : &property._data[datum.subdomain()]),
     _value(property._value)
 {
 }
 
+template <typename T, unsigned int dimension>
+KOKKOS_FUNCTION
+MaterialPropertyValue<T, dimension>::MaterialPropertyValue(
+    const MaterialProperty<T, dimension> & property, const Datum & datum, const unsigned int qp)
+  : MaterialPropertyValueBase<T, dimension>(property, datum, qp)
+{
+}
+
 template <typename T>
+KOKKOS_FUNCTION
 MaterialPropertyValue<T, 0>::MaterialPropertyValue(const MaterialProperty<T, 0> & property,
                                                    const Datum & datum,
-                                                   unsigned int qp)
+                                                   const unsigned int qp)
   : MaterialPropertyValueBase<T, 0>(property, datum, qp)
-{
-}
-
-template <typename T>
-MaterialPropertyValue<T, 1>::MaterialPropertyValue(const MaterialProperty<T, 1> & property,
-                                                   const Datum & datum,
-                                                   unsigned int qp)
-  : MaterialPropertyValueBase<T, 1>(property, datum, qp)
-{
-}
-
-template <typename T>
-MaterialPropertyValue<T, 2>::MaterialPropertyValue(const MaterialProperty<T, 2> & property,
-                                                   const Datum & datum,
-                                                   unsigned int qp)
-  : MaterialPropertyValueBase<T, 2>(property, datum, qp)
-{
-}
-
-template <typename T>
-MaterialPropertyValue<T, 3>::MaterialPropertyValue(const MaterialProperty<T, 3> & property,
-                                                   const Datum & datum,
-                                                   unsigned int qp)
-  : MaterialPropertyValueBase<T, 3>(property, datum, qp)
-{
-}
-
-template <typename T>
-MaterialPropertyValue<T, 4>::MaterialPropertyValue(const MaterialProperty<T, 4> & property,
-                                                   const Datum & datum,
-                                                   unsigned int qp)
-  : MaterialPropertyValueBase<T, 4>(property, datum, qp)
 {
 }
 
@@ -70,7 +48,7 @@ template <typename T>
 KOKKOS_FUNCTION auto &
 MaterialPropertyValue<T, 0>::operator=(const T & value)
 {
-  (*_data)(_qp) = value;
+  (*_data)(_idx) = value;
 
   return *this;
 }
@@ -79,7 +57,7 @@ template <typename T>
 KOKKOS_FUNCTION auto &
 MaterialPropertyValue<T, 0>::operator=(const MaterialPropertyValue<T, 0> & value)
 {
-  (*_data)(_qp) = static_cast<T>(value);
+  (*_data)(_idx) = static_cast<T>(value);
 
   return *this;
 }

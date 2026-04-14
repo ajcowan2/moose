@@ -25,11 +25,10 @@ public:
   virtual void finalize() override;
 
   template <typename Derived>
-  KOKKOS_FUNCTION void
-  executeShim(const Derived & postprocessor, Datum & datum, Real * result) const;
+  KOKKOS_FUNCTION void reduce(Datum & datum, Real * result) const;
 
-  KOKKOS_FUNCTION void join(typename Base::DefaultLoop, Real * result, const Real * source) const;
-  KOKKOS_FUNCTION void init(typename Base::DefaultLoop, Real * result) const;
+  KOKKOS_FUNCTION void join(typename Base::ReducerLoop, Real * result, const Real * source) const;
+  KOKKOS_FUNCTION void init(typename Base::ReducerLoop, Real * result) const;
 
 protected:
   const bool _average;
@@ -38,18 +37,14 @@ protected:
 template <typename Base>
 template <typename Derived>
 KOKKOS_FUNCTION void
-KokkosIntegralPostprocessor<Base>::executeShim(const Derived & postprocessor,
-                                               Datum & datum,
-                                               Real * result) const
+KokkosIntegralPostprocessor<Base>::reduce(Datum & datum, Real * result) const
 {
   Real sum = 0;
   Real vol = 0;
 
   for (unsigned int qp = 0; qp < datum.n_qps(); ++qp)
   {
-    datum.reinit();
-
-    sum += datum.JxW(qp) * postprocessor.computeQpIntegral(qp, datum);
+    sum += datum.JxW(qp) * static_cast<const Derived *>(this)->computeQpIntegral(qp, datum);
     vol += datum.JxW(qp);
   }
 
@@ -61,7 +56,7 @@ KokkosIntegralPostprocessor<Base>::executeShim(const Derived & postprocessor,
 
 template <typename Base>
 KOKKOS_FUNCTION void
-KokkosIntegralPostprocessor<Base>::join(typename Base::DefaultLoop,
+KokkosIntegralPostprocessor<Base>::join(typename Base::ReducerLoop,
                                         Real * result,
                                         const Real * source) const
 {
@@ -73,7 +68,7 @@ KokkosIntegralPostprocessor<Base>::join(typename Base::DefaultLoop,
 
 template <typename Base>
 KOKKOS_FUNCTION void
-KokkosIntegralPostprocessor<Base>::init(typename Base::DefaultLoop, Real * result) const
+KokkosIntegralPostprocessor<Base>::init(typename Base::ReducerLoop, Real * result) const
 {
   result[0] = 0;
 

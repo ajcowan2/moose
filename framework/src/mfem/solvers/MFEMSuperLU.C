@@ -26,13 +26,15 @@ MFEMSuperLU::validParams()
 
 MFEMSuperLU::MFEMSuperLU(const InputParameters & parameters) : MFEMSolverBase(parameters)
 {
-  constructSolver(parameters);
+  constructSolver();
 }
 
 void
-MFEMSuperLU::constructSolver(const InputParameters &)
+MFEMSuperLU::constructSolver()
 {
-  _solver = std::make_unique<Moose::MFEM::SuperLUSolver>(getMFEMProblem().getComm());
+  auto solver = std::make_unique<Moose::MFEM::SuperLUSolver>(getMFEMProblem().getComm());
+  solver->SetDeviceOffload(mfem::Device::IsAvailable());
+  _solver = std::move(solver);
 }
 
 void

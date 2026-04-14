@@ -10,7 +10,7 @@ Euler equations are as follows:
 \pd{\rho u A}{t} + \pd{(\rho u^2 + p) A}{x} = p \pd{A}{x} - F A + \rho g_x A \,,
 
 !equation
-\pd{\rho E A}{t} + \pd{u (\rho E + p) A}{x} = \rho u g_x A + q''' A \,,
+\pd{\rho E A}{t} + \pd{u (\rho E + p) A}{x} - \pd{}{x}\pr{k \pd{T}{x} A} = \rho u g_x A + q''' A \,,
 
 where
 
@@ -21,6 +21,8 @@ where
 - $u$ is the axial velocity,
 - $E$ is the specific total energy,
 - $p$ is the pressure,
+- $T$ is the temperature,
+- $k$ is the thermal conductivity,
 - $F$ is the viscous drag force density,
 - $g_x$ is the component of acceleration due to gravity in the axial direction, and
 - $q'''$ is the heat source rate density.
@@ -31,3 +33,15 @@ The viscous drag force density is computed as
 F = \frac{f \rho u |u| A}{2 D_h} \,,
 
 where $f$ is the Darcy friction factor and $D_h$ is the hydraulic diameter.
+
+## Passive Transport id=passive_transport
+
+Optionally, equations may be added to model the passive transport of scalar quantities $y$,
+corresponding to some amount per unit volume, where "amount" may be a mass or a number
+of particles, for example:
+
+!equation
+\pd{y A}{t} + \pd{y u A}{x} = 0 \,.
+
+Each scalar quantity $y$ advects with the carrier fluid velocity $u$ without
+providing any feedback to the flow.

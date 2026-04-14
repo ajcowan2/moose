@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <map>
+#include <set>
 #include <vector>
 
 #include "DataIO.h"
@@ -17,7 +19,6 @@
 #include "InputParameters.h"
 #include "MooseVariableBase.h"
 #include "ConsoleStreamInterface.h"
-
 // libMesh
 #include "libmesh/exodusII_io.h"
 #include "libmesh/parallel_object.h"
@@ -753,6 +754,8 @@ public:
     return _vars[tid].fieldVariables();
   }
 
+  const VariableWarehouse & variableWarehouse(THREAD_ID tid = 0) const { return _vars[tid]; }
+
   const std::vector<MooseVariableScalar *> & getScalarVariables(THREAD_ID tid)
   {
     return _vars[tid].scalars();
@@ -924,15 +927,6 @@ public:
   Moose::VarKindType varKind() const { return _var_kind; }
 
   /**
-   * Reference to the container vector which hold gradients at dofs (if it can be interpreted).
-   * Mainly used for finite volume systems.
-   */
-  const std::vector<std::unique_ptr<NumericVector<Number>>> & gradientContainer() const
-  {
-    return _raw_grad_container;
-  }
-
-  /**
    * Compute time derivatives, auxiliary variables, etc.
    * @param type Our current execution stage
    */
@@ -971,6 +965,12 @@ public:
    * size the matrix data for each variable for the number of matrix tags we have
    */
   void sizeVariableMatrixData();
+
+  /**
+   * Skip the next copy from the solution vector to the old solution vector
+   * old -> older is still performed
+   */
+  void skipNextSolutionToOldCopy() { _skip_next_solution_to_old_copy = true; }
 
 protected:
   /**
@@ -1067,11 +1067,6 @@ protected:
   /// serialized solution is not needed
   std::unique_ptr<NumericVector<Number>> _serialized_solution;
 
-  /// A cache for storing gradients at dof locations. We store it on the system
-  /// because we create copies of variables on each thread and that would
-  /// lead to increased data duplication when using threading-based parallelism.
-  std::vector<std::unique_ptr<NumericVector<Number>>> _raw_grad_container;
-
 private:
   /**
    * Gets the vector name used for an old (not current) solution state.
@@ -1084,6 +1079,8 @@ private:
   std::array<std::vector<NumericVector<Number> *>, 3> _solution_states;
   /// The saved solution states (0 = current, 1 = old, 2 = older, etc)
   std::vector<NumericVector<Number> *> _saved_solution_states;
+  /// Whether to skip the next copy from the solution to the old vector
+  bool _skip_next_solution_to_old_copy;
 };
 
 inline bool

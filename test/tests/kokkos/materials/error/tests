@@ -54,18 +54,26 @@
     [different_dim]
       type = RunException
       input = 'kokkos_multid.i'
-      expect_err = 'The declared 2D Kokkos material property \'prop_a\' with dimensions \(1, 1\) was already declared as a 1D property with dimensions \(1\).'
+      expect_err = 'The declared 2D Kokkos material property \'prop_a\' was already declared as a 1D property.'
       cli_args = 'Materials/active=\'left_real_1D right_real_2D\''
       detail = 'the same material property was declared by different non-overlapping materials with different dimensions'
       capabilities = 'kokkos'
       compute_devices = 'cpu cuda'
     []
-    [different_dim_size]
+    [bnd_overlap_different_dim_size]
       type = RunException
-      input = 'kokkos_multid.i'
-      expect_err = 'The declared 1D Kokkos material property \'prop_a\' with dimensions \(2\) was already declared as a 1D property with dimensions \(1\).'
-      cli_args = 'Materials/active=\'left_real_1D right_real_1D\''
-      detail = 'the same material property was declared by different non-overlapping materials with different size of dimensions'
+      input = 'kokkos_overlap_bnd.i'
+      expect_err = 'The declared boundary-restricted Kokkos material property \'prop\' with dimensions \(2\) was already declared as a property with dimensions \(1\).'
+      detail = 'the same material property was declared by different overlapping boundary-restricted materials with different size of dimensions'
+      capabilities = 'kokkos'
+      compute_devices = 'cpu cuda'
+    []
+    [bnd_overlap_different_constant_on]
+      type = RunException
+      input = 'kokkos_overlap_bnd.i'
+      expect_err = 'The declared boundary-restricted Kokkos material property \'prop\' with constant_on = ELEMENT was already declared as a property with constant_on = NONE.'
+      cli_args = 'Materials/mat2/dims=1 Materials/mat2/constant_on=ELEMENT'
+      detail = 'the same material property was declared by different overlapping boundary-restricted materials with different constant_on options'
       capabilities = 'kokkos'
       compute_devices = 'cpu cuda'
     []
@@ -83,6 +91,14 @@
     input = 'kokkos_multid.i'
     cli_args = 'Materials/active=\'left_real_1D right_real_1D_correct\''
     requirement = 'The Kokkos material system shall not error when the same material property was declared by different non-overlapping materials with consistent type and dimension.'
+    capabilities = 'kokkos'
+    compute_devices = 'cpu cuda'
+  []
+  [different_dim_size_non_overlap]
+    type = RunApp
+    input = 'kokkos_multid.i'
+    cli_args = 'Materials/active=\'left_real_1D right_real_1D\''
+    requirement = 'The Kokkos material system shall not error when the same material property was declared by different non-overlapping materials with different size of dimensions.'
     capabilities = 'kokkos'
     compute_devices = 'cpu cuda'
   []

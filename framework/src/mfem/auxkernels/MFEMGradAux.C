@@ -30,10 +30,11 @@ MFEMGradAux::validParams()
 MFEMGradAux::MFEMGradAux(const InputParameters & parameters)
   : MFEMAuxKernel(parameters),
     _source_var_name(getParam<VariableName>("source")),
-    _source_var(*getMFEMProblem().getProblemData().gridfunctions.Get(_source_var_name)),
+    _source_var(*getMFEMProblem().getGridFunction(_source_var_name)),
     _scale_factor(getParam<mfem::real_t>("scale_factor")),
     _grad(_source_var.ParFESpace(), _result_var.ParFESpace())
 {
+  _sequence = _source_var.GetSequence() + _result_var.GetSequence();
   _grad.Assemble();
   _grad.Finalize();
 }
@@ -42,7 +43,20 @@ MFEMGradAux::MFEMGradAux(const InputParameters & parameters)
 void
 MFEMGradAux::execute()
 {
+  update();
   _grad.AddMult(_source_var, _result_var = 0, _scale_factor);
+}
+
+void
+MFEMGradAux::update()
+{
+  if (long sequence = _source_var.GetSequence() + _result_var.GetSequence() > _sequence)
+  {
+    _sequence = sequence;
+    _grad.Update();
+    _grad.Assemble();
+    _grad.Finalize();
+  }
 }
 
 #endif
