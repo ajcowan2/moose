@@ -27,24 +27,20 @@ public:
   {
   }
 
-  void SetGridFunctions() override;
-  void Init(mfem::BlockVector & X) override;
+  virtual void SetGridFunctions() override;
   virtual void Solve() override;
 
-  [[nodiscard]] Moose::MFEM::ComplexEquationSystem * GetEquationSystem() const override
+  [[nodiscard]] virtual Moose::MFEM::ComplexEquationSystem * GetEquationSystem() const override
   {
-    if (!_equation_system)
-    {
-      mooseError(
-          "No ComplexEquationSystem has been added to ComplexEquationSystemProblemOperator.");
-    }
-
+    mooseAssert(_equation_system,
+                "No ComplexEquationSystem in ComplexEquationSystemProblemOperator.");
     return _equation_system.get();
   }
 
 private:
   std::shared_ptr<Moose::MFEM::ComplexEquationSystem> _equation_system{nullptr};
   std::vector<mfem::ParComplexGridFunction *> _cmplx_trial_variables;
+  std::vector<mfem::ParComplexGridFunction *> _cmplx_test_variables;
 };
 
 } // namespace Moose::MFEM

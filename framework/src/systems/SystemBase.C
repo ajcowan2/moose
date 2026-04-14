@@ -27,7 +27,7 @@
 #include "FVBoundaryCondition.h"
 #include "FEProblemBase.h"
 #include "TimeIntegrator.h"
-
+#include "GradientLimiterType.h"
 #include "libmesh/dof_map.h"
 #include "libmesh/string_to_enum.h"
 #include "libmesh/fe_interface.h"
@@ -82,7 +82,8 @@ SystemBase::SystemBase(SubProblem & subproblem,
     _max_var_n_dofs_per_node(0),
     _automatic_scaling(false),
     _verbose(false),
-    _solution_states_initialized(false)
+    _solution_states_initialized(false),
+    _skip_next_solution_to_old_copy(false)
 {
 }
 
@@ -947,9 +948,9 @@ SystemBase::getVector(TagID tag)
   if (!hasVector(tag))
   {
     if (!_subproblem.vectorTagExists(tag))
-      mooseError("Cannot retreive vector with tag ", tag, " because that tag does not exist");
+      mooseError("Cannot retrieve vector with tag ", tag, " because that tag does not exist");
     else
-      mooseError("Cannot retreive vector with tag ",
+      mooseError("Cannot retrieve vector with tag ",
                  tag,
                  " in system '",
                  name(),
@@ -965,9 +966,9 @@ SystemBase::getVector(TagID tag) const
   if (!hasVector(tag))
   {
     if (!_subproblem.vectorTagExists(tag))
-      mooseError("Cannot retreive vector with tag ", tag, " because that tag does not exist");
+      mooseError("Cannot retrieve vector with tag ", tag, " because that tag does not exist");
     else
-      mooseError("Cannot retreive vector with tag ",
+      mooseError("Cannot retrieve vector with tag ",
                  tag,
                  " in system '",
                  name(),
@@ -1026,9 +1027,9 @@ SystemBase::getMatrix(TagID tag)
   if (!hasMatrix(tag))
   {
     if (!_subproblem.matrixTagExists(tag))
-      mooseError("Cannot retreive matrix with tag ", tag, " because that tag does not exist");
+      mooseError("Cannot retrieve matrix with tag ", tag, " because that tag does not exist");
     else
-      mooseError("Cannot retreive matrix with tag ",
+      mooseError("Cannot retrieve matrix with tag ",
                  tag,
                  " in system '",
                  name(),
@@ -1044,9 +1045,9 @@ SystemBase::getMatrix(TagID tag) const
   if (!hasMatrix(tag))
   {
     if (!_subproblem.matrixTagExists(tag))
-      mooseError("Cannot retreive matrix with tag ", tag, " because that tag does not exist");
+      mooseError("Cannot retrieve matrix with tag ", tag, " because that tag does not exist");
     else
-      mooseError("Cannot retreive matrix with tag ",
+      mooseError("Cannot retrieve matrix with tag ",
                  tag,
                  " in system '",
                  name(),
@@ -1289,8 +1290,9 @@ SystemBase::copyOldSolutions()
   const auto states =
       _solution_states[static_cast<unsigned short>(Moose::SolutionIterationType::Time)].size();
   if (states > 1)
-    for (unsigned int i = states - 1; i > 0; --i)
+    for (unsigned int i = states - 1; i > uint(_skip_next_solution_to_old_copy); --i)
       solutionState(i) = solutionState(i - 1);
+  _skip_next_solution_to_old_copy = false;
 
   if (solutionUDotOld())
     *solutionUDotOld() = *solutionUDot();
@@ -1559,19 +1561,6 @@ SystemBase::initialSetup()
 {
   for (THREAD_ID tid = 0; tid < libMesh::n_threads(); tid++)
     _vars[tid].initialSetup();
-
-  // If we need raw gradients, we initialize them here.
-  bool gradient_storage_initialized = false;
-  for (const auto & field_var : _vars[0].fieldVariables())
-    if (!gradient_storage_initialized && field_var->needsGradientVectorStorage())
-    {
-      _raw_grad_container.clear();
-      for (const auto i : make_range(this->_mesh.dimension()))
-      {
-        libmesh_ignore(i);
-        _raw_grad_container.push_back(currentSolution()->zero_clone());
-      }
-    }
 }
 
 void

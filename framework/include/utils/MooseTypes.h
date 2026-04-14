@@ -1210,6 +1210,9 @@ MooseDerivativeStringClass(SamplerName);
 /// This type is used for objects that expect "UserObject" names
 MooseDerivativeStringClass(UserObjectName);
 
+/// This type is used for referencing finite-volume interpolation methods
+MooseDerivativeStringClass(InterpolationMethodName);
+
 /// This type is used for objects that expect an Indicator object name
 MooseDerivativeStringClass(IndicatorName);
 
@@ -1331,6 +1334,9 @@ class FunctorCopy
   friend class NodalUserObject;
   friend class SideUserObject;
   friend class GeneralUserObject;
+  friend class ElementReducer;
+  friend class NodalReducer;
+  friend class SideReducer;
   friend class Postprocessor;
   friend class VectorPostprocessor;
   friend class Reporter;

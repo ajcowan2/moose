@@ -32,17 +32,18 @@ BlockRestrictable::initializeKokkosBlockRestrictable()
   if (_moose_object->isParamValid("_kokkos_material"))
     return;
 
-  auto & blocks = blockRestricted() ? blockIDs() : meshBlockIDs();
+  const auto & blocks = blockRestricted() ? blockIDs() : meshBlockIDs();
 
   const auto * const kokkos_mesh = _blk_mesh->getKokkosMesh();
 
-  std::set<ContiguousElementID> element_ids;
+  std::vector<ContiguousElementID> element_ids;
   std::vector<ContiguousNodeID> node_ids;
 
-  for (auto block : blocks)
+  for (const auto block : blocks)
   {
-    element_ids.insert(kokkos_mesh->getSubdomainContiguousElementIDs(block).begin(),
-                       kokkos_mesh->getSubdomainContiguousElementIDs(block).end());
+    element_ids.insert(element_ids.end(),
+                       kokkos_mesh->getSubdomainContiguousElementIDRange(block).begin(),
+                       kokkos_mesh->getSubdomainContiguousElementIDRange(block).end());
     node_ids.insert(node_ids.end(),
                     kokkos_mesh->getSubdomainContiguousNodeIDs(block).begin(),
                     kokkos_mesh->getSubdomainContiguousNodeIDs(block).end());

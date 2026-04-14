@@ -24,7 +24,8 @@ other targeted, advanced workshop presentations.
 
 These are examples of trainings:
 
-- [MOOSE User Workshop](user_workshop/index.md alternative=missing_config.md)
+- [MOOSE User Short Workshop](user_short_workshop/index.md alternative=missing_config.md) (4 hours)
+- [MOOSE User Workshop](user_workshop/index.md alternative=missing_config.md) (2 days)
 - [MOOSE Developer Workshop](workshop/index.md alternative=missing_config.md)
 - [MOOSE MultiApps Workshop](tutorial02_multiapps/presentation/index.md alternative=missing_config.md)
 - [MOOSE Verification Workshop](tutorial03_verification/presentation/index.md alternative=missing_config.md)
@@ -107,6 +108,7 @@ Pages containing guidance for using these optional packages are listed below.
 - [LibTorch](source/libtorch/utils/LibtorchArtificialNeuralNet.md optional=True)
 - [NEML2](syntax/NEML2/index.md optional=True)
 - [MFEM](syntax/MFEM/index.md optional=True)
+- [Kokkos](syntax/Kokkos/index.md optional=True)
 
 ## C++ Programming References id=programming
 

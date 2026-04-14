@@ -48,7 +48,9 @@
 #define TIME_SECTION(...)                                                                          \
   GET_MACRO(__VA_ARGS__, TIME_SECTION4, TIME_SECTION3, TIME_SECTION2, TIME_SECTION1, )(__VA_ARGS__)
 
+class MooseApp;
 class InputParameters;
+class LinearFVGradientInterface;
 class MooseObject;
 
 /**
@@ -95,6 +97,8 @@ public:
    * Get the PerfGraph
    */
   PerfGraph & perfGraph();
+
+  friend class LinearFVGradientInterface;
 
 protected:
   /**

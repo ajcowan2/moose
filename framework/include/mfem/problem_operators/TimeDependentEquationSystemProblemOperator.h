@@ -14,7 +14,6 @@
 #include "TimeDependentProblemOperator.h"
 #include "EquationSystemInterface.h"
 #include "TimeDependentEquationSystem.h"
-#include "MFEMBackwardEulerStateSolver.h"
 
 namespace Moose::MFEM
 {
@@ -31,22 +30,21 @@ public:
   {
   }
 
-  void SetGridFunctions() override;
-  void Init(mfem::BlockVector & X) override;
-  void ImplicitSolve(const mfem::real_t dt, const mfem::Vector & X, mfem::Vector & dX_dt) override;
-  void Solve() override;
+  virtual void SetGridFunctions() override;
+  virtual void Init(mfem::BlockVector & X) override;
+  virtual void ImplicitSolve(const mfem::real_t, const mfem::Vector &, mfem::Vector &) override;
+  virtual void Solve() override;
 
-  [[nodiscard]] Moose::MFEM::TimeDependentEquationSystem * GetEquationSystem() const override
+  [[nodiscard]] virtual Moose::MFEM::TimeDependentEquationSystem *
+  GetEquationSystem() const override
   {
-    if (!_equation_system)
-    {
-      MFEM_ABORT("No equation system has been added.");
-    }
-
+    mooseAssert(_equation_system,
+                "No TimeDependentEquationSystem in TimeDependentEquationSystemProblemOperator.");
     return _equation_system.get();
   }
 
 protected:
+  /// Add kernels/bcs and assemble the linear part of the equation system
   void BuildEquationSystemOperator(mfem::real_t dt);
 
 private:

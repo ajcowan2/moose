@@ -25,14 +25,14 @@ public:
   virtual void addInitialConditions() override;
   virtual void addMooseObjects() override;
 
+  /// Returns the solution variable names for the flow model
+  virtual std::vector<VariableName> solutionVariableNames() const = 0;
+
 protected:
   // Methods to get scaling factors for rhoA, rhouA, and rhoEA
   virtual Real getScalingFactorRhoA() const = 0;
   virtual Real getScalingFactorRhoUA() const = 0;
   virtual Real getScalingFactorRhoEA() const = 0;
-
-  /// Returns the solution variable names for the flow model
-  virtual std::vector<VariableName> solutionVariableNames() const = 0;
 
   /// Returns true if all of the IC parameters are valid
   bool ICParametersAreValid() const;
@@ -60,6 +60,7 @@ protected:
 
   /// Adds the DG kernels
   virtual void addDGKernels();
+  virtual void addHeatConductionDGKernel();
 
   /// Adds the aux kernels
   virtual void addAuxKernels();

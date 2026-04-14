@@ -24,6 +24,7 @@ NodalKernel::NodalKernel(const InputParameters & parameters)
     _u(_var, Moose::SOLUTION_TAG, true),
     _boundary_restricted(boundaryRestricted())
 {
+  addMooseVariableDependency(&_var);
 }
 
 void
@@ -54,8 +55,8 @@ NodalKernel::computeJacobian()
   {
     auto & sys = kokkosSystem(_kokkos_var.sys());
 
-    _thread.resize({sys.getCoupling(_kokkos_var.var()).size(),
-                    _boundary_restricted ? numKokkosBoundaryNodes() : numKokkosBlockNodes()});
+    _thread.resize(sys.getCoupling(_kokkos_var.var()).size(),
+                   _boundary_restricted ? numKokkosBoundaryNodes() : numKokkosBlockNodes());
 
     Policy policy(0, _thread.size());
 

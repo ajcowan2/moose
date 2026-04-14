@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "CSGLattice.h"
+#include "CSGUtils.h"
 
 namespace CSG
 {
@@ -17,6 +18,7 @@ CSGLattice::CSGLattice(const std::string & name,
                        const std::optional<OuterVariant> & outer)
   : _name(name), _lattice_type(lattice_type), _outer_type("VOID"), _outer_universe(nullptr)
 {
+  CSGUtils::checkValidCSGName(name);
   // Handle the outer variant if provided
   if (outer.has_value())
   {
@@ -88,7 +90,7 @@ CSGLattice::getUniverseIndices(const std::string & univ_name) const
 }
 
 const std::vector<std::reference_wrapper<const CSGUniverse>>
-CSGLattice::getUniqueUniverses()
+CSGLattice::getUniqueUniverses() const
 {
   std::vector<std::reference_wrapper<const CSGUniverse>> unique_univs;
   auto all_univs = getUniverses();
@@ -153,6 +155,8 @@ CSGLattice::operator==(const CSGLattice & other) const
   if (this->getName() != other.getName())
     return false;
   if (this->getType() != other.getType())
+    return false;
+  if (this->getTransformations() != other.getTransformations())
     return false;
   if (this->getOuterType() != other.getOuterType())
     return false;

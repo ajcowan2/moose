@@ -160,6 +160,7 @@ addActionTypes(Syntax & syntax)
   appendMooseObjectTask  ("add_dirac_kernel",             VectorDiracKernel);
   registerMooseObjectTask("add_dg_kernel",                DGKernel,                  false);
   registerMooseObjectTask("add_fv_kernel",                FVKernel,                  false);
+  registerMooseObjectTask("add_interpolation_method",     FVInterpolationMethod,     false);
   registerMooseObjectTask("add_linear_fv_kernel",         LinearFVKernel,            false);
   registerMooseObjectTask("add_fv_bc",                    FVBoundaryCondition,       false);
   registerMooseObjectTask("add_linear_fv_bc",             LinearFVBoundaryCondition, false);
@@ -411,7 +412,8 @@ addActionTypes(Syntax & syntax)
                            "(add_reporter)"
                            "(declare_late_reporters)"
                            "(add_aux_kernel, add_bc, add_damper, add_dirac_kernel, add_kernel,"
-                           " add_nodal_kernel, add_dg_kernel, add_fv_kernel, add_linear_fv_kernel,"
+                           " add_nodal_kernel, add_dg_kernel, add_fv_kernel, add_interpolation_method,"
+                           " add_linear_fv_kernel,"
                            " add_fv_bc, add_linear_fv_bc, add_fv_ik, add_interface_kernel,"
                            " add_scalar_kernel, add_aux_scalar_kernel, add_indicator, add_marker,"
                            " add_bound, add_hybridized_kernel, add_hybridized_integrated_bc)"
@@ -480,6 +482,9 @@ addActionTypes(Syntax & syntax)
   addTaskDependency("add_mfem_solver", "add_mfem_preconditioner");
   addTaskDependency("add_mfem_solver", "add_mfem_problem_operator");
 #endif
+
+  // Linear FV kernels fetch FVInterpolationMethod instances in their constructors
+  addTaskDependency("add_linear_fv_kernel", "add_interpolation_method");
 
   registerTask("parse_neml2", /*required=*/false);
   addTaskDependency("add_material", "parse_neml2");
@@ -707,6 +712,10 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntax("AddNodalNormalsAction", "NodalNormals");
 
+  // FVInterpolationMethods
+  registerSyntax("AddFVInterpolationMethodAction", "FVInterpolationMethods/*");
+  syntax.registerSyntaxType("FVInterpolationMethods/*", "InterpolationMethodName");
+
   // Indicator
   registerSyntax("AddElementalFieldAction", "Adaptivity/Indicators/*");
   registerSyntax("AddIndicatorAction", "Adaptivity/Indicators/*");
@@ -804,6 +813,20 @@ ScopedThrowOnError::ScopedThrowOnError() : ScopedThrowOnError(true) {}
 
 ScopedThrowOnError::~ScopedThrowOnError() { Moose::_throw_on_error = _throw_on_error_before; }
 
+ScopedDeprecatedIsError::ScopedDeprecatedIsError(const bool deprecated_is_error)
+  : _deprecated_is_error_before(Moose::_deprecated_is_error)
+{
+  mooseAssert(!libMesh::Threads::in_threads, "Cannot be used in threads");
+  Moose::_deprecated_is_error = deprecated_is_error;
+}
+
+ScopedDeprecatedIsError::ScopedDeprecatedIsError() : ScopedDeprecatedIsError(true) {}
+
+ScopedDeprecatedIsError::~ScopedDeprecatedIsError()
+{
+  Moose::_deprecated_is_error = _deprecated_is_error_before;
+}
+
 std::string
 hitMessagePrefix(const hit::Node & node)
 {
@@ -821,7 +844,6 @@ bool _deprecated_is_error = false;
 bool _throw_on_error = false;
 bool _throw_on_warning = false;
 int interrupt_signal_number = 0;
-bool show_trace = true;
 bool show_multiple = false;
 
 } // namespace Moose

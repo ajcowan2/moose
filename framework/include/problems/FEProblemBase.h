@@ -92,6 +92,9 @@ class IntegratedBCBase;
 class LineSearch;
 class UserObject;
 class UserObjectBase;
+class FVInterpolationMethod;
+class FVFaceInterpolationMethod;
+class FVAdvectedInterpolationMethod;
 class AutomaticMortarGeneration;
 class VectorPostprocessor;
 class Convergence;
@@ -572,6 +575,11 @@ public:
 
   virtual void copySolutionsBackwards();
 
+  /// Prevents the copy of the solution vector to the old solution vector in each system.
+  /// Old -> Older is still performed
+  /// This is useful for MultiApps fixed point iterations
+  void skipNextForwardSolutionCopyToOld();
+
   /**
    * Advance all of the state holding vectors / datastructures so that we can move to the next
    * timestep.
@@ -596,6 +604,13 @@ public:
    * @param iteration_type the type of iteration for which old/older states are needed
    */
   void needSolutionState(unsigned int oldest_needed, Moose::SolutionIterationType iteration_type);
+
+  /**
+   * Whether we need up to old (1) or older (2) solution states for a given type of iteration
+   * @param oldest_needed oldest solution state needed
+   * @param iteration_type the type of iteration for which old/older states are needed
+   */
+  bool hasSolutionState(unsigned int state, Moose::SolutionIterationType iteration_type) const;
 
   /**
    * Output the current step.
@@ -833,7 +848,7 @@ public:
    * Get all Kokkos systems that are associated with MOOSE nonlinear and auxiliary systems
    * @returns The array of Kokkos systems
    */
-  ///{@
+  ///@{
   Moose::Kokkos::Array<Moose::Kokkos::System> & getKokkosSystems() { return _kokkos_systems; }
   const Moose::Kokkos::Array<Moose::Kokkos::System> & getKokkosSystems() const
   {
@@ -846,7 +861,7 @@ public:
    * @param sys_num The system number
    * @returns The Kokkos system
    */
-  ///{@
+  ///@{
   Moose::Kokkos::System & getKokkosSystem(const unsigned int sys_num);
   const Moose::Kokkos::System & getKokkosSystem(const unsigned int sys_num) const;
   ///@}
@@ -974,6 +989,13 @@ public:
                               const std::string & var_name,
                               InputParameters & params);
 
+  /**
+   * Add an elemental field variable for use in the adaptivity system
+   */
+  virtual void addElementalFieldVariable(const std::string & var_type,
+                                         const std::string & var_name,
+                                         InputParameters & params);
+
   virtual void addAuxVariable(const std::string & var_name,
                               const libMesh::FEType & type,
                               const std::set<SubdomainID> * const active_subdomains = NULL);
@@ -1070,16 +1092,11 @@ public:
   /**
    * Project a function onto a range of elements for a given variable
    *
-   * @warning The current implementation is not ideal. The projection takes place on all local
-   * active elements, ignoring the specified \p elem_range. After the projection, dof values on the
-   * specified \p elem_range are copied over to the current solution vector. This should be fixed
-   * once the project_vector or project_solution API is modified to take a custom element range.
-   *
    * \param elem_range          Element range to project on
    * \param func                Function to project
    * \param func_grad           Gradient of the function
    * \param params              Parameters to pass to the function
-   * \param target_var          variable name to project
+   * \param target_vars         variable names to project
    */
   void projectFunctionOnCustomRange(ConstElemRange & elem_range,
                                     Number (*func)(const Point &,
@@ -1091,7 +1108,7 @@ public:
                                                           const std::string &,
                                                           const std::string &),
                                     const libMesh::Parameters & params,
-                                    const VariableName & target_var);
+                                    const std::vector<VariableName> & target_vars);
 
   // Materials
   virtual void addMaterial(const std::string & material_name,
@@ -1296,6 +1313,12 @@ public:
   virtual void addKokkosPostprocessor(const std::string & pp_name,
                                       const std::string & name,
                                       InputParameters & parameters);
+  virtual void addKokkosVectorPostprocessor(const std::string & pp_name,
+                                            const std::string & name,
+                                            InputParameters & parameters);
+  virtual void addKokkosReporter(const std::string & type,
+                                 const std::string & name,
+                                 InputParameters & parameters);
 #endif
 
   /**
@@ -1317,14 +1340,6 @@ public:
   // UserObjects /////
   virtual std::vector<std::shared_ptr<UserObject>> addUserObject(
       const std::string & user_object_name, const std::string & name, InputParameters & parameters);
-
-  // TODO: delete this function after apps have been updated to not call it
-  const ExecuteMooseObjectWarehouse<UserObject> & getUserObjects() const
-  {
-    mooseDeprecated(
-        "This function is deprecated, use theWarehouse().query() to construct a query instead");
-    return _all_user_objects;
-  }
 
   /**
    * Get the user object by its name
@@ -1406,6 +1421,46 @@ public:
    * @return Const reference to the Positions object
    */
   const Positions & getPositionsObject(const std::string & name) const;
+
+  /**
+   * Add an FV interpolation method
+   * @param method_type The type of the method.
+   * @param name The name of the method.
+   * @param parameters The input parameters of the method.
+   */
+  virtual void addFVInterpolationMethod(const std::string & method_type,
+                                        const std::string & name,
+                                        InputParameters & parameters);
+
+  /**
+   * Retrieve an FV interpolation method
+   * @param name The name of the method.
+   * @param tid The thread ID.
+   */
+  const FVInterpolationMethod & getFVInterpolationMethod(const InterpolationMethodName & name,
+                                                         const THREAD_ID tid = 0) const;
+
+  /**
+   * Retrieve a scalar face interpolation method.
+   * @param name The name of the method.
+   * @param tid The thread ID.
+   */
+  const FVFaceInterpolationMethod &
+  getFVFaceInterpolationMethod(const InterpolationMethodName & name, const THREAD_ID tid = 0) const;
+
+  /**
+   * Retrieve an advected interpolation method.
+   * @param name The name of the method.
+   * @param tid The thread ID.
+   */
+  const FVAdvectedInterpolationMethod &
+  getFVAdvectedInterpolationMethod(const InterpolationMethodName & name,
+                                   const THREAD_ID tid = 0) const;
+
+  /**
+   * Check if an FV interpolation method with a given name exists
+   */
+  bool hasFVInterpolationMethod(const InterpolationMethodName & name) const;
 
   /**
    * Whether or not a Postprocessor value exists by a given name.
@@ -2341,6 +2396,37 @@ public:
    */
   bool needsPreviousNewtonIteration() const;
 
+  /**
+   * Set a flag that indicated that user required values for the previous multiapp fixed point
+   * iterate for the solver systems (not auxiliary)
+   * @param needed the value that should be set to the flag
+   * @param solver_sys_num the index of the solver system for which the previous iteration is needed
+   */
+  void needsPreviousMultiAppFixedPointIterationSolution(bool needed,
+                                                        const unsigned int solver_sys_num);
+
+  /**
+   * Check to see whether we need to compute the variable values of the previous multiapp fixed
+   * point iteration for the solver systems (not auxiliary)
+   * @param solver_sys_num the index of the solver system for which the previous iteration is needed
+   * @return true if the user required values of the previous multiapp fixed point iteration
+   */
+  bool needsPreviousMultiAppFixedPointIterationSolution(const unsigned int solver_sys_num) const;
+
+  /**
+   * Set a flag that indicated that user required values for the previous multiapp fixed point
+   * iterate for the auxiliary system
+   */
+  void needsPreviousMultiAppFixedPointIterationAuxiliary(bool state);
+
+  /**
+   * Check to see whether we need to compute the variable values of the previous multiapp fixed
+   * point iteration for the auxiliary system
+   * @return true if the user required values of the previous multiapp fixed point iteration from
+   * the auxiliary system
+   */
+  bool needsPreviousMultiAppFixedPointIterationAuxiliary() const;
+
   ///@{
   /**
    * Convenience zeros
@@ -2807,6 +2893,8 @@ public:
 
   void createTagMatrices(CreateTaggedMatrixKey);
 
+  bool useHashTableMatrixAssembly() const { return _use_hash_table_matrix_assembly; }
+
 #ifdef MOOSE_KOKKOS_ENABLED
   /**
    * @returns whether any Kokkos object was added in the problem
@@ -2888,6 +2976,12 @@ private:
    * Make basic solver params for linear solves
    */
   static SolverParams makeLinearSolverParams();
+
+  TheWarehouse::Query getUOQuery(const std::string & system,
+                                 const ExecFlagType & type,
+                                 const Moose::AuxGroup & group) const;
+
+  void getUOExecutionGroups(TheWarehouse::Query & query, std::set<int> & execution_groups) const;
 
 protected:
   bool _initialized;
@@ -3060,9 +3154,6 @@ protected:
   // Helper class to access Reporter object values
   ReporterData _reporter_data;
 
-  // TODO: delete this after apps have been updated to not call getUserObjects
-  ExecuteMooseObjectWarehouse<UserObject> _all_user_objects;
-
   /// MultiApp Warehouse
   ExecuteMooseObjectWarehouse<MultiApp> _multi_apps;
 
@@ -3105,14 +3196,10 @@ protected:
                               bool is_aux,
                               const std::set<SubdomainID> * const active_subdomains);
 
-  void computeUserObjectsInternal(const ExecFlagType & type,
-                                  const Moose::AuxGroup & group,
-                                  TheWarehouse::Query & query);
+  void computeUserObjectsInternal(const ExecFlagType & type, TheWarehouse::Query & query);
 
 #ifdef MOOSE_KOKKOS_ENABLED
-  void computeKokkosUserObjectsInternal(const ExecFlagType & type,
-                                        const Moose::AuxGroup & group,
-                                        TheWarehouse::Query & query);
+  void computeKokkosUserObjectsInternal(const ExecFlagType & type, TheWarehouse::Query & query);
 #endif
 
   /// Verify that SECOND order mesh uses SECOND order displacements.
@@ -3201,6 +3288,10 @@ protected:
 
   /// Indicates we need to save the previous NL iteration variable values
   bool _previous_nl_solution_required;
+  /// Indicates we need to save the previous multiapp fixed-point iteration solver variable values
+  std::vector<bool> _previous_multiapp_fp_nl_solution_required;
+  /// Indicates we need to save the previous multiapp fixed-point iteration auxiliary variable values
+  bool _previous_multiapp_fp_aux_solution_required;
 
   /// Indicates if nonlocal coupling is required/exists
   bool _has_nonlocal_coupling;

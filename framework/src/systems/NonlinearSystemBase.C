@@ -639,8 +639,9 @@ NonlinearSystemBase::addConstraint(const std::string & c_name,
   _constraints.addObject(constraint);
   postAddResidualObject(*constraint);
 
-  if (constraint && constraint->addCouplingEntriesToJacobian())
-    addImplicitGeometricCouplingEntriesToJacobian(true);
+  if (!_fe_problem.useHashTableMatrixAssembly())
+    if (constraint && constraint->addCouplingEntriesToJacobian())
+      addImplicitGeometricCouplingEntriesToJacobian(true);
 }
 
 void
@@ -1763,7 +1764,6 @@ NonlinearSystemBase::residualSetup()
   // Avoid recursion
   if (this == &_fe_problem.currentNonlinearSystem())
     _fe_problem.residualSetup();
-  _app.solutionInvalidity().resetSolutionInvalidCurrentIteration();
 }
 
 void
@@ -1988,7 +1988,7 @@ NonlinearSystemBase::computeResidualInternal(const std::set<TagID> & tags)
   // Accumulate the occurrence of solution invalid warnings for the current iteration cumulative
   // counters
   _app.solutionInvalidity().syncIteration();
-  _app.solutionInvalidity().solutionInvalidAccumulation();
+  _app.solutionInvalidity().accumulateIterationIntoTimeStepOccurences();
 }
 
 void
@@ -2113,6 +2113,11 @@ NonlinearSystemBase::computeNodalBCs(NumericVector<Number> & residual, const std
 void
 NonlinearSystemBase::computeNodalBCs(const std::set<TagID> & tags)
 {
+#ifdef MOOSE_KOKKOS_ENABLED
+  if (_fe_problem.hasKokkosResidualObjects())
+    computeKokkosNodalBCs(tags);
+#endif
+
   // We need to close the diag_save_in variables on the aux system before NodalBCBases clear the
   // dofs on boundary nodes
   if (_has_save_in)
@@ -2843,7 +2848,6 @@ NonlinearSystemBase::jacobianSetup()
   // Avoid recursion
   if (this == &_fe_problem.currentNonlinearSystem())
     _fe_problem.jacobianSetup();
-  _app.solutionInvalidity().resetSolutionInvalidCurrentIteration();
 }
 
 void
@@ -3221,7 +3225,7 @@ NonlinearSystemBase::computeJacobianInternal(const std::set<TagID> & tags)
   // Accumulate the occurrence of solution invalid warnings for the current iteration cumulative
   // counters
   _app.solutionInvalidity().syncIteration();
-  _app.solutionInvalidity().solutionInvalidAccumulation();
+  _app.solutionInvalidity().accumulateIterationIntoTimeStepOccurences();
 }
 
 void

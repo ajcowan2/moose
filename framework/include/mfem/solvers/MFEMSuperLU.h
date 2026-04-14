@@ -30,6 +30,7 @@ public:
     _s_superlu->SetOperator(*_a_superlu.get());
   }
   void Mult(const mfem::Vector & x, mfem::Vector & y) const override { _s_superlu->Mult(x, y); }
+  void SetDeviceOffload(bool offload) { _s_superlu->SetDeviceOffload(offload); }
 
 private:
   std::unique_ptr<mfem::SuperLURowLocMatrix> _a_superlu{nullptr};
@@ -48,7 +49,7 @@ public:
   MFEMSuperLU(const InputParameters & parameters);
 
 protected:
-  void constructSolver(const InputParameters & parameters) override;
+  void constructSolver() override;
 
   /// Updates the solver with the bilinear form in case LOR solve is required
   void updateSolver(mfem::ParBilinearForm & a, mfem::Array<int> & tdofs) override;

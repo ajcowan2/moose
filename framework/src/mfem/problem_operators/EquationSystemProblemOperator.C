@@ -17,20 +17,14 @@ void
 EquationSystemProblemOperator::SetGridFunctions()
 {
   _trial_var_names = GetEquationSystem()->GetTrialVarNames();
+  _test_var_names = GetEquationSystem()->GetTestVarNames();
   ProblemOperator::SetGridFunctions();
-}
-
-void
-EquationSystemProblemOperator::Init(mfem::BlockVector & X)
-{
-  ProblemOperator::Init(X);
-  GetEquationSystem()->BuildEquationSystem();
 }
 
 void
 EquationSystemProblemOperator::Solve()
 {
-  GetEquationSystem()->BuildJacobian(_true_x, _true_rhs);
+  BuildEquationSystemOperator();
 
   if (_problem_data.jacobian_solver->isLOR() && GetEquationSystem()->GetTestVarNames().size() > 1)
     mooseError("LOR solve is only supported for single-variable systems");
@@ -38,12 +32,18 @@ EquationSystemProblemOperator::Solve()
       *GetEquationSystem()->_blfs.Get(GetEquationSystem()->GetTestVarNames().at(0)),
       GetEquationSystem()->_ess_tdof_lists.at(0));
 
-  _problem_data.nonlinear_solver->SetSolver(_problem_data.jacobian_solver->getSolver());
+  _problem_data.nonlinear_solver->SetPreconditioner(_problem_data.jacobian_solver->getSolver());
   _problem_data.nonlinear_solver->SetOperator(*GetEquationSystem());
   _problem_data.nonlinear_solver->Mult(_true_rhs, _true_x);
 
-  GetEquationSystem()->RecoverFEMSolution(
-      _true_x, _problem_data.gridfunctions, _problem_data.cmplx_gridfunctions);
+  GetEquationSystem()->SetTrialVariablesFromTrueVectors(_true_x);
+}
+
+void
+EquationSystemProblemOperator::BuildEquationSystemOperator()
+{
+  GetEquationSystem()->BuildEquationSystem();
+  GetEquationSystem()->FormSystem(_true_x, _true_rhs);
 }
 
 } // namespace Moose::MFEM

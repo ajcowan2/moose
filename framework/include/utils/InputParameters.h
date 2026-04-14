@@ -13,6 +13,7 @@
 #include "MooseUtils.h"
 #include "MooseError.h"
 #include "MooseTypes.h"
+#include "MooseEnum.h"
 #include "MultiMooseEnum.h"
 #include "ExecFlagEnum.h"
 #include "Conversion.h"
@@ -1043,6 +1044,17 @@ public:
    */
   bool isParamDefined(const std::string & name) const;
 
+  /**
+   * Query a parameter
+   *
+   * If the parameter is not valid, nullptr will be returned
+   *
+   * @param name The name of the parameter
+   * @return A pointer to the parameter value, if it exists
+   */
+  template <typename T>
+  const T * queryParam(const std::string & name) const;
+
   ///@{
   /*
    * These methods are here to retrieve parameters for scalar and vector types respectively. We will
@@ -1461,7 +1473,8 @@ private:
    */
   [[noreturn]] void callMooseError(std::string msg,
                                    const bool with_prefix = true,
-                                   const hit::Node * node = nullptr) const;
+                                   const hit::Node * node = nullptr,
+                                   const bool show_trace = true) const;
 
   /// The actual parameter data. Each Metadata object contains attributes for the corresponding
   /// parameter.
@@ -2250,6 +2263,13 @@ void InputParameters::setParamHelper<MooseFunctorName, int>(const std::string & 
                                                             const int & r_value);
 
 template <typename T>
+const T *
+InputParameters::queryParam(const std::string & name) const
+{
+  return isParamValid(name) ? &getParamHelper<T>(name, *this) : nullptr;
+}
+
+template <typename T>
 const T &
 InputParameters::getParamHelper(const std::string & name_in, const InputParameters & pars)
 {
@@ -2447,10 +2467,7 @@ InputParameters::paramError(const std::string & param, Args... args) const
   std::ostringstream oss;
   moose::internal::mooseStreamAll(oss, std::forward<Args>(args)...);
   const auto [prefix, node] = paramMessageContext(param);
-
-  Moose::show_trace = false;
-  callMooseError(prefix + oss.str(), false, node);
-  Moose::show_trace = true;
+  callMooseError(prefix + oss.str(), false, node, /* show_trace = */ false);
 }
 
 namespace Moose

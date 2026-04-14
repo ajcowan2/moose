@@ -1097,6 +1097,7 @@ TEST_F(MooseServerTest, CompletionMeshDefaultedType)
     type = Console
     system_info = AUX
     execute_on = LINEAR
+    wall_time_interval = 3600
   []
 []
 )INPUT";
@@ -1147,7 +1148,6 @@ label: inactive                               text: inactive =                  
 label: include_local_in_ghosting              text: include_local_in_ghosting = ${1:false}              desc: Boolean used to t... pos: [6.0]-[6.0] kind:  8 format: snippet
 label: length_unit                            text: length_unit =                                       desc: How much distance... pos: [6.0]-[6.0] kind: 14 format: regular
 label: max_leaf_size                          text: max_leaf_size = ${1:10}                             desc: The maximum numbe... pos: [6.0]-[6.0] kind: 14 format: snippet
-label: nemesis                                text: nemesis = ${1:false}                                desc: If nemesis=true a... pos: [6.0]-[6.0] kind:  8 format: snippet
 label: output_ghosting                        text: output_ghosting = ${1:false}                        desc: Boolean to turn o... pos: [6.0]-[6.0] kind:  8 format: snippet
 label: partitioner                            text: partitioner = ${1:default}                          desc: Specifies a mesh ... pos: [6.0]-[6.0] kind: 13 format: snippet
 label: patch_size                             text: patch_size = ${1:40}                                desc: The number of nod... pos: [6.0]-[6.0] kind: 14 format: snippet
@@ -1453,11 +1453,13 @@ TEST_F(MooseServerTest, HoverDocumentationRequests)
   expect_text = "Output an information message once.";
   check_hover(request_id, doc_uri, request_line, request_char, expect_text);
 
-  // check hover 04 - on system_info MultiMooseEnum AUX with no documentation
+  // check hover 04 - on wall_time_interval parameter for unit and range info
   request_id = 16;
-  request_line = 46;
-  request_char = 20;
-  expect_text = "";
+  request_line = 48;
+  request_char = 11;
+  expect_text = "The target wall time interval (in seconds) at which to output\n\n"
+                "Units: seconds\n\n"
+                "Range: wall_time_interval > 0";
   check_hover(request_id, doc_uri, request_line, request_char, expect_text);
 
   // check hover 05 - on execute_on ExecFlagEnum LINEAR with no documentation
