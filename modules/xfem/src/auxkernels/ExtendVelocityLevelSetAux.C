@@ -17,16 +17,44 @@ ExtendVelocityLevelSetAux::validParams()
 {
   InputParameters params = AuxKernel::validParams();
   params.addClassDescription("Extends velocity from an interface to a domain.");
+
   params.addParam<UserObjectName>(
       "qp_point_value_user_object",
       "Name of QpPointValueAtXFEMInterface that gives values at Qp points along an interface.");
+
+  params.addRequiredParam<Real>("diffusivity_positive",
+                                "Diffusion coefficient on the positive level set side");
+
+  params.addRequiredParam<Real>("diffusivity_negative",
+                                "Diffusion coefficient on the negative level set side");
+
+  params.addRequiredParam<Real>("equilibrium_concentration_positive",
+                                "Equilibrium concentration on the positive side of interface");
+
+  params.addRequiredParam<Real>("equilibrium_concentration_negative",
+                                "Equilibrium concentration on the negative side of interface");
+
+  MooseEnum model_type("empirical_correlation INL_ROM Stefan", "empirical_correlation");
+  params.addRequiredParam<MooseEnum>("model_type",
+                                     model_type,
+                                     "The type of model to apply. Options include: " +
+                                         model_type.getRawNames());
+
   return params;
 }
 
 ExtendVelocityLevelSetAux::ExtendVelocityLevelSetAux(const InputParameters & parameters)
   : AuxKernel(parameters),
     _qp_value_uo(getUserObjectByName<QpPointValueAtXFEMInterface>(
-        getParam<UserObjectName>("qp_point_value_user_object")))
+        getParam<UserObjectName>("qp_point_value_user_object"))),
+
+    _D_pos(getParam<Real>("diffusivity_positive")),
+    _D_neg(getParam<Real>("diffusivity_negative")),
+
+    _Ceq_pos(getParam<Real>("equilibrium_concentration_positive")),
+    _Ceq_neg(getParam<Real>("equilibrium_concentration_negative")),
+
+    _model_type(getParam<MooseEnum>("model_type").template getEnum<model_type>())
 {
   if (!isNodal())
     mooseError("ExtendVelocityLevelSetAux: Aux variable must be nodal variable.");
@@ -40,17 +68,6 @@ ExtendVelocityLevelSetAux::computeValue()
   _grad_values_positive_level_set_side = _qp_value_uo.getGradientAtPositiveLevelSet();
   _grad_values_negative_level_set_side = _qp_value_uo.getGradientAtNegativeLevelSet();
   _level_set_normal = _qp_value_uo.getLevelSetNormal();
-
-  // for (auto const & v : _grad_values_negative_level_set_side)
-  //   std::cout << "_grad_values_negative_level_set_side = " << v.second << std::endl;
-
-  // for (unsigned int i = 0; i < _grad_values_positive_level_set_side.size(); i++)
-  //   std::cout << "qp = " << _qp_points[i] << "term a = " <<
-  //   _grad_values_positive_level_set_side[i]
-  //             << ", term b = " << _level_set_normal[i]
-  //             << "dot product = " << _grad_values_positive_level_set_side[i] *
-  //             _level_set_normal[i]
-  //             << " value = " << _values_negative_level_set_side[i] << std::endl;
 
   _qp_points = _qp_value_uo.getQpPoint();
 
@@ -66,27 +83,45 @@ ExtendVelocityLevelSetAux::computeValue()
     }
   }
 
-  // std::cout << "grad u = " << _grad_values_negative_level_set_side[index] << std::endl;
-  // std::cout << "pos u = " << _values_positive_level_set_side[index] << std::endl;
-  // std::cout << "neg u = " << _values_negative_level_set_side[index] << std::endl;
+  Real vel = 0.0;
+  switch (_model_type)
+  {
+    case model_type::empirical_correlation:
+    {
+      Real temperature_avg = 1000; // [K] SiC average temperature
+      vel = 38.232 * std::exp(-11342.3 / temperature_avg);
+      vel *= 1.0e-6 / (3600.0 * 24.0);
+      break;
+    }
 
-  // Real vel = -0.796e-5 * _grad_values_negative_level_set_side[index] * RealVectorValue(0, -1, 0)
-  // /
-  //            (_values_negative_level_set_side[index] - _values_positive_level_set_side[index]);
+    case model_type::INL_ROM:
+    {
+      Real V_m = 40.096 / 3.21 * 1.0e-6; // [m^3/mol] SiC molar volume
+      Real net_flux = (-_D_pos * (_grad_values_positive_level_set_side[index] * _level_set_normal[index])) -
+                      (-_D_neg * (_grad_values_negative_level_set_side[index] * _level_set_normal[index]));
 
-  // Real vel = 0.8102e-5 * _grad_values_positive_level_set_side[index] * _level_set_normal[index] /
-  //            (_values_positive_level_set_side[index] - 143.0);
+      vel = 3 * V_m * net_flux;
+      break;
+    }
 
-  Real vel = 0.8102e-5 * _grad_values_positive_level_set_side[index] * _level_set_normal[index] /
-             (_values_positive_level_set_side[index] - 143.0);
+    case model_type::Stefan:
+    {
+      Real deltaC = _Ceq_pos - _Ceq_neg;
 
-  // std::cout << "grad = " << _grad_values_positive_level_set_side[index] << std::endl;
-  // std::cout << "normal = " << _level_set_normal[index] << std::endl;
-  // std::cout << "post = " << _values_positive_level_set_side[index] << std::endl;
+      if (std::abs(deltaC) < 1e-16)
+        mooseError("Equilibrium concentrations are equal; interface velocity undefined.");
 
-  // return std::abs(vel);
+      Real net_flux = (-_D_pos * (_grad_values_positive_level_set_side[index] * _level_set_normal[index])) -
+                      (-_D_neg * (_grad_values_negative_level_set_side[index] * _level_set_normal[index]));
 
-  // return -0.0113 / (1 + exp(-0.1 * (_values_positive_level_set_side[index] - 920)));
+      vel = net_flux / deltaC;
+      break;
+    }
 
-  return -38.232 * exp(-11342.3 / 1400) * 1.1574e-11;
+    default:
+      mooseError("Invalid model type.");
+  }
+
+  std::cout << "vel = " << vel << std::endl;
+  return vel;
 }

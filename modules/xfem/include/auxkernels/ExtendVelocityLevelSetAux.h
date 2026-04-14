@@ -30,6 +30,17 @@ protected:
   /// Pointer to the QpPointValueAtXFEMInterface object
   const QpPointValueAtXFEMInterface & _qp_value_uo;
 
+  /// Diffusion coefficients
+  Real _D_pos;
+  Real _D_neg;
+
+  /// Equilibrium concentrations at the interface
+  Real _Ceq_pos;
+  Real _Ceq_neg;
+
+  /// The model type to use for velocity calculation
+  const enum class model_type { empirical_correlation, INL_ROM, Stefan } _model_type;
+
   /// Mapping from point index and its values at the positive level set side
   std::map<unsigned int, Real> _values_positive_level_set_side;
 
