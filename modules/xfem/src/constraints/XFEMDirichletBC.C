@@ -90,7 +90,7 @@ XFEMDirichletBC::computeQpResidual(Moose::DGResidualType type)
   Real elem_vol = _xfem->getPhysicalVolumeFraction(_current_elem) * _current_elem->volume();
   Real neighbor_vol = _xfem->getPhysicalVolumeFraction(_neighbor_elem) * _neighbor_elem->volume();
 
-  _value = _value_neighbor = _temp_bc.sample(_constraint_q_point[_qp](1));
+  // _value = _value_neighbor = _temp_bc.sample(_constraint_q_point[_qp](1));
 
   unsigned int count_pos = 0;
   unsigned int count_neg = 0;
@@ -172,14 +172,14 @@ XFEMDirichletBC::computeQpResidual(Moose::DGResidualType type)
 
   Real r = 0;
 
-  // Real C_elem = std::sqrt(std::abs(_diff * area / elem_vol));
-  // Real C_neigh = std::sqrt(std::abs(_diff * area / neighbor_vol));
+  Real C_elem = std::sqrt(std::abs(_diff * area / elem_vol));
+  Real C_neigh = std::sqrt(std::abs(_diff * area / neighbor_vol));
 
   // C_elem = std::min(C_elem, 1e5);
   // C_neigh = std::min(C_neigh, 1e5);
 
-  Real C_elem = 1.0;
-  Real C_neigh = 1.0;
+  // C_elem = 1.0;
+  // C_neigh = 1.0;
 
   // std::cout << "_u[_qp] = " << _u[_qp] << ", _u_neighbor[_qp] = " << _u_neighbor[_qp]
   //           << ", area = " << area << std::endl;
@@ -225,14 +225,16 @@ XFEMDirichletBC::computeQpJacobian(Moose::DGJacobianType type)
   Real elem_vol = _xfem->getPhysicalVolumeFraction(_current_elem) * _current_elem->volume();
   Real neighbor_vol = _xfem->getPhysicalVolumeFraction(_neighbor_elem) * _neighbor_elem->volume();
 
-  _value = _value_neighbor = _temp_bc.sample(_constraint_q_point[_qp](1));
+  // _value = _value_neighbor = _temp_bc.sample(_constraint_q_point[_qp](1));
 
   Real r = 0;
 
   Real C_elem = std::sqrt(std::abs(_diff * area / elem_vol));
   Real C_neigh = std::sqrt(std::abs(_diff * area / neighbor_vol));
+
   // C_elem = std::min(C_elem, 1e5);
   // C_neigh = std::min(C_neigh, 1e5);
+  
   // C_elem = 1.0;
   // C_neigh = 1.0;
 
