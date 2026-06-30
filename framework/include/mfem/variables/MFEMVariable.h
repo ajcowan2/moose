@@ -12,12 +12,12 @@
 #pragma once
 
 #include "MFEMFESpace.h"
-#include "MFEMGeneralUserObject.h"
+#include "MFEMObject.h"
 
 /**
  * Constructs and stores an mfem::ParGridFunction object.
  */
-class MFEMVariable : public MFEMGeneralUserObject
+class MFEMVariable : public MFEMObject
 {
 public:
   static InputParameters validParams();
@@ -32,6 +32,9 @@ public:
 
   /// Returns the variable name corresponding to the time derivative of the MFEMVariable.
   inline const VariableName & getTimeDerivativeName() const { return _time_derivative_name; }
+
+  /// Declare default coefficients associated with this gridfunction
+  void declareCoefficients();
 
 protected:
   const MFEMFESpace & _fespace;

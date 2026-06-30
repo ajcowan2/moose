@@ -65,7 +65,8 @@ const std::string LIST_GEOM_ELEM = "EDGE EDGE2 EDGE3 EDGE4 "
                                    "HEX HEX8 HEX20 HEX27 "
                                    "TET TET4 TET10 TET14 "
                                    "PRISM PRISM6 PRISM15 PRISM18 "
-                                   "PYRAMID PYRAMID5 PYRAMID13 PYRAMID14";
+                                   "PYRAMID PYRAMID5 PYRAMID13 PYRAMID14 "
+                                   "C0POLYGON C0POLYHEDRON";
 
 /**
  * Helper object for holding qp mapping info.
@@ -251,16 +252,7 @@ public:
    * If not already created, creates a map from every node to all
    * elements to which they are connected.
    */
-  const std::map<dof_id_type, std::vector<dof_id_type>> & nodeToElemMap();
-
-  /**
-   * If not already created, creates a map from every node to all
-   * _active_ _semilocal_ elements to which they are connected.
-   * Semilocal elements include local elements and elements that share at least
-   * one node with a local element.
-   * \note Extra ghosted elements are not included in this map!
-   */
-  const std::map<dof_id_type, std::vector<dof_id_type>> & nodeToActiveSemilocalElemMap();
+  const std::unordered_map<dof_id_type, std::vector<dof_id_type>> & nodeToElemMap();
 
   /**
    * These structs are required so that the bndNodes{Begin,End} and
@@ -553,11 +545,12 @@ public:
    * @param mesh_to_clone If nonnull, we will clone this mesh instead of preparing our current one
    * @return Whether the libMesh mesh was prepared. This should really only be relevant in MOOSE
    * framework contexts where we need to make a decision about what to do with the displaced mesh.
-   * If the reference mesh base object has \p prepare_for_use called (e.g. this method returns \p
-   * true when called for the reference mesh), then we must pass the reference mesh base object into
-   * this method when we call this for the displaced mesh. This is because the displaced mesh \emph
-   * must be an exact clone of the reference mesh. We have seen that \p prepare_for_use called on
-   * two previously identical meshes can result in two different meshes even with Metis partitioning
+   * If the reference mesh base object has \p complete_preparation() called (e.g. this method
+   * returns \p true when called for the reference mesh), then we must pass the reference mesh base
+   * object into this method when we call this for the displaced mesh. This is because the displaced
+   * mesh \emph must be an exact clone of the reference mesh. We have seen that \p
+   * complete_preparation() called on two previously identical meshes can result in two different
+   * meshes even with Metis partitioning
    */
   bool prepare(const MeshBase * mesh_to_clone);
 
@@ -1556,6 +1549,13 @@ public:
   /// Return displace node list by side list boolean
   bool getDisplaceNodeListBySideList() { return _displace_node_list_by_side_list; }
 
+  /**
+   * rebuild the node to element map if it's been requsted previously
+   * @returns Whether the map was re-built, or equivalently whether the map had been requested
+   * previously
+   */
+  bool possiblyRebuildNodeToElemMap();
+
 protected:
   /// Deprecated (DO NOT USE)
   std::vector<std::unique_ptr<libMesh::GhostingFunctor>> _ghosting_functors;
@@ -1655,12 +1655,10 @@ protected:
       _bnd_elem_range;
 
   /// A map of all of the current nodes to the elements that they are connected to.
-  std::map<dof_id_type, std::vector<dof_id_type>> _node_to_elem_map;
-  bool _node_to_elem_map_built;
+  std::unordered_map<dof_id_type, std::vector<dof_id_type>> _node_to_elem_map;
 
-  /// A map of all of the current nodes to the active elements that they are connected to.
-  std::map<dof_id_type, std::vector<dof_id_type>> _node_to_active_semilocal_elem_map;
-  bool _node_to_active_semilocal_elem_map_built;
+  /// Whether @p _node_to_elem_map has been built.
+  bool _node_to_elem_map_built = false;
 
   /**
    * A set of subdomain IDs currently present in the mesh. For parallel meshes, includes
@@ -1744,6 +1742,12 @@ protected:
   void setPartitionerHelper(MeshBase * mesh = nullptr);
 
 private:
+  /**
+   * If not already created, creates a map from every node to all
+   * elements to which they are connected.
+   */
+  std::unordered_map<dof_id_type, std::vector<dof_id_type>> & internalNodeToElemMap();
+
   /// Map connecting elems with their corresponding ElemInfo, we use the element ID as
   /// the key
   mutable std::unordered_map<dof_id_type, ElemInfo> _elem_to_elem_info;

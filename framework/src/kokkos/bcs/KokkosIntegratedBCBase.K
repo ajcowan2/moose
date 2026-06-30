@@ -17,6 +17,7 @@ IntegratedBCBase::validParams()
 {
   auto params = BoundaryCondition::validParams();
   params += MaterialPropertyInterface::validParams();
+  params += LocalParallelInterface::validParams();
 
   // Integrated BCs always rely on Boundary MaterialData
   params.set<Moose::MaterialDataType>("_material_data_type") = Moose::BOUNDARY_MATERIAL_DATA;
@@ -28,14 +29,16 @@ IntegratedBCBase::IntegratedBCBase(const InputParameters & parameters,
                                    Moose::VarFieldType field_type)
   : BoundaryCondition(parameters, field_type, false),
     CoupleableMooseVariableDependencyIntermediateInterface(this, false),
-    MaterialPropertyInterface(this, Moose::EMPTY_BLOCK_IDS, boundaryIDs())
+    MaterialPropertyInterface(this, Moose::EMPTY_BLOCK_IDS, boundaryIDs()),
+    LocalParallelInterface(this)
 {
 }
 
 IntegratedBCBase::IntegratedBCBase(const IntegratedBCBase & object)
   : BoundaryCondition(object),
     CoupleableMooseVariableDependencyIntermediateInterface(object, {}),
-    MaterialPropertyInterface(object, {})
+    MaterialPropertyInterface(object, {}),
+    LocalParallelInterface(object)
 {
 }
 

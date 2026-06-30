@@ -31,11 +31,6 @@ public:
   ReducerBase(const ReducerBase & reducer);
 
   /**
-   * Dispatch reduction operation
-   */
-  virtual void computeReducer() = 0;
-
-  /**
    * Kokkos function tag
    */
   struct ReducerLoop
@@ -53,12 +48,14 @@ public:
     ::Kokkos::abort("Default reduce() should never be called. Make sure you properly redefined "
                     "this method in your class without typos.");
   }
-  KOKKOS_FUNCTION void join(ReducerLoop, Real * /* result */, const Real * /* source */) const
+  template <typename Derived>
+  KOKKOS_FUNCTION void join(Real * /* result */, const Real * /* source */) const
   {
     ::Kokkos::abort("Default join() should never be called. Make sure you properly redefined this "
                     "method in your class without typos.");
   }
-  KOKKOS_FUNCTION void init(ReducerLoop, Real * /* result */) const
+  template <typename Derived>
+  KOKKOS_FUNCTION void init(Real * /* result */) const
   {
     ::Kokkos::abort("Default init() should never be called. Make sure you properly redefined this "
                     "method in your class without typos.");
@@ -78,17 +75,13 @@ public:
 
 protected:
   /**
-   * MOOSE object
+   * Dispatch reduction operation
    */
-  const MooseObject * _reducer_object;
+  virtual void computeReducer();
   /**
-   * Kokkos functor dispatcher
+   * Get the number of threads
    */
-  std::unique_ptr<DispatcherBase> _dispatcher;
-  /**
-   * Reduction buffer
-   */
-  ::Kokkos::View<Real *, ::Kokkos::HostSpace> _reduction_buffer;
+  virtual ThreadID numReducerThreads() const = 0;
   /**
    * Allocate reduction buffer
    */
@@ -96,6 +89,19 @@ protected:
   {
     ::Kokkos::realloc(_reduction_buffer, size);
   }
+
+  /**
+   * MOOSE object
+   */
+  const MooseObject * _reducer_object;
+  /**
+   * Kokkos functor dispatcher
+   */
+  std::unique_ptr<DispatcherBase> _reducer_dispatcher;
+  /**
+   * Reduction buffer
+   */
+  ::Kokkos::View<Real *, ::Kokkos::HostSpace> _reduction_buffer;
 };
 
 } // namespace Moose::Kokkos

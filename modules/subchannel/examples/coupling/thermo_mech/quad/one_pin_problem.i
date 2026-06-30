@@ -20,12 +20,7 @@ heated_length = 1.0
 
 [QuadSubChannelMesh]
     [subchannel]
-        type = SCMQuadSubChannelMeshGenerator
-    []
-
-    [fuel_pins]
-        type = SCMQuadPinMeshGenerator
-        input = subchannel
+        type = SCMQuadAssemblyMeshGenerator
     []
 []
 
@@ -38,48 +33,6 @@ heated_length = 1.0
     []
 []
 
-[AuxVariables]
-    [mdot]
-        block = subchannel
-    []
-    [SumWij]
-        block = subchannel
-    []
-    [P]
-        block = subchannel
-    []
-    [DP]
-        block = subchannel
-    []
-    [h]
-        block = subchannel
-    []
-    [T]
-        block = subchannel
-    []
-    [rho]
-        block = subchannel
-    []
-    [mu]
-        block = subchannel
-    []
-    [S]
-        block = subchannel
-    []
-    [w_perim]
-        block = subchannel
-    []
-    [q_prime]
-        block = fuel_pins
-    []
-    [Tpin]
-        block = fuel_pins
-    []
-    [Dpin]
-        block = fuel_pins
-    []
-[]
-
 [FluidProperties]
     [water]
         type = Water97FluidProperties
@@ -87,36 +40,35 @@ heated_length = 1.0
 []
 
 [SubChannel]
-    type = QuadSubChannel1PhaseProblem
-    fp = water
-    n_blocks = 1
-    beta = 0.006
-    CT = 2.6
-    compute_density = true
-    compute_viscosity = true
-    compute_power = true
-    P_out = ${P_out}
-    verbose_subchannel = true
-    deformation = true
+  type = QuadSubChannel1PhaseProblem
+  fp = water
+  n_blocks = 1
+  compute_density = true
+  compute_viscosity = true
+  compute_power = true
+  P_out = ${P_out}
+  verbose_subchannel = true
   friction_closure = 'MATRA'
+  mixing_closure ='constant_beta'
+  pin_HTC_closure = 'Dittus-Boelter'
 []
 
 [SCMClosures]
   [MATRA]
     type = SCMFrictionMATRA
   []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.006
+    CT = 2.6
+  []
+  [Dittus-Boelter]
+    type = SCMHTCDittusBoelter
+  []
 []
 
 [ICs]
-    [S_IC]
-        type = SCMQuadFlowAreaIC
-        variable = S
-    []
 
-    [w_perim_IC]
-        type = SCMQuadWettedPerimIC
-        variable = w_perim
-    []
 
     [q_prime_IC]
         type = SCMQuadPowerIC
@@ -131,11 +83,6 @@ heated_length = 1.0
         value = ${T_in}
     []
 
-    [Dpin_ic]
-        type = ConstantIC
-        variable = Dpin
-        value = 0.00950
-    []
 
     [P_ic]
         type = ConstantIC
@@ -293,7 +240,8 @@ heated_length = 1.0
     []
 
     [pin_transfer]
-        type = SCMPinSolutionTransfer
+        type = SCMSolutionTransfer
+        transfer_type = pin
         to_multi_app = viz
         variable = 'Tpin Dpin q_prime'
     []

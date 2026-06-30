@@ -128,7 +128,7 @@ FEProblemBase::addKokkosFunction(const std::string & type,
 }
 
 bool
-FEProblemBase::hasKokkosFunction(const std::string & name)
+FEProblemBase::hasKokkosFunction(const std::string & name) const
 {
   return _kokkos_functions.hasActiveObject(name);
 }
@@ -136,6 +136,10 @@ FEProblemBase::hasKokkosFunction(const std::string & name)
 Moose::Kokkos::Function
 FEProblemBase::getKokkosFunction(const std::string & name)
 {
+#ifdef MOOSE_ENABLE_KOKKOS_GPU
+  mooseError("Retrieving a Kokkos function as abstract type is currently not supported for GPU.");
+#endif
+
   const auto & function = getKokkosFunction<Moose::FunctionBase>(name);
 
   std::shared_ptr<Moose::Kokkos::FunctionWrapperHostBase> wrapper =
@@ -276,12 +280,12 @@ FEProblemBase::initKokkos()
   // Initialize Kokkos mesh
   _mesh.getKokkosMesh()->update();
 
+  // Initialize Kokkos assembly
+  _kokkos_assembly.init();
+
   // Call functions that require Kokkos mesh to be initialized first
   for (auto hook : _kokkos_mesh_initialization_hooks)
     hook();
-
-  // Initialize Kokkos assembly
-  _kokkos_assembly.init();
 
   // Initialize Kokkos systems
 

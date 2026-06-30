@@ -13,7 +13,7 @@
 #include "libmesh/vector_value.h"
 
 /**
- * Interface for specifying gravity at the component level
+ * Interface for specifying gravity vector
  */
 class GravityVectorInterface
 {
@@ -26,6 +26,8 @@ public:
   Real gravityMagnitude() const { return _gravity_magnitude; }
   /// Gets gravity magnitude
   const RealVectorValue & gravityVector() const { return _gravity_vector; }
+  /// Gets gravity direction (zero vector if zero magnitude)
+  const RealVectorValue & gravityDirection() const { return _gravity_direction; }
 
 private:
   /// Gravitational acceleration vector

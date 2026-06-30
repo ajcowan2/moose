@@ -10,8 +10,8 @@ vacuum_permeability = 1.0
 []
 
 [Mesh]
-    type = MFEMMesh
-    file = ../mesh/split_embedded_concentric_torus.e
+  type = MFEMMesh
+  file = ../mesh/split_embedded_concentric_torus.e
 []
 
 [FunctorMaterials]
@@ -89,7 +89,6 @@ vacuum_permeability = 1.0
     source = h_field
     scale_factor = 1.0
     execute_on = TIMESTEP_END
-    execution_order_group = 4
   []
 []
 
@@ -122,11 +121,13 @@ vacuum_permeability = 1.0
   []
 []
 
-[Solver]
-  type = MFEMHyprePCG
-  preconditioner = ams
-  l_tol = 1e-9
-  l_max_its = 100
+[Solvers]
+  [main]
+    type = MFEMHyprePCG
+    preconditioner = ams
+    l_tol = 1e-9
+    l_max_its = 100
+  []
 []
 
 [Executioner]
@@ -147,8 +148,8 @@ vacuum_permeability = 1.0
 [Transfers]
   [from_external_field]
     type = MultiAppMFEMCopyTransfer
-    source_variable = h_field
-    variable = h_field
+    source_variables = h_field
+    variables = h_field
     from_multi_app = hphi_magnetostatic
   []
   [submesh_transfer_to_coil]
@@ -171,7 +172,6 @@ vacuum_permeability = 1.0
     coefficient = resistivity
     dual_variable = j_field
     primal_variable = j_field
-    execution_order_group = 5
     block = 'TorusCore TorusSheath'
   []
 []

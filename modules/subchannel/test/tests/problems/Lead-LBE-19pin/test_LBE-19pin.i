@@ -6,7 +6,7 @@ mass_flux_in = '${fparse 10*rho_in/3600/flow_area}'
 P_out = 1.0e5 # Pa
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = 3
     n_cells = 50
     flat_to_flat = 0.05319936
@@ -33,8 +33,6 @@ P_out = 1.0e5 # Pa
   fp = LBE
   n_blocks = 1
   P_out = 1.0e5
-  CT = 1.0
-  # enforce_uniform_pressure = false
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -42,33 +40,41 @@ P_out = 1.0e5 # Pa
   segregated = false
   verbose_subchannel = true
   interpolation_scheme = upwind
+  pin_HTC_closure = 'Dittus-Boelter'
 
   # friction model
   friction_closure = 'cheng'
+
+  full_output = true
+  mixing_closure = 'Kim_and_Chung'
 []
 
 [SCMClosures]
   [cheng]
     type = SCMFrictionUpdatedChengTodreas
   []
+  [Kim_and_Chung]
+    type = SCMMixingKimAndChung
+  []
+  [Dittus-Boelter]
+    type = SCMHTCDittusBoelter
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMTriFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMTriWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMTriPowerIC
     variable = q_prime
     power = '${fparse 250000}'
     filename = "pin_power_profile19.txt"
+  []
+
+  [Dpin_ic]
+    type = ConstantIC
+    variable = Dpin
+    value = 8.2e-3
   []
 
   [T_ic]
@@ -209,6 +215,7 @@ P_out = 1.0e5 # Pa
   [Total_power]
     type = ElementIntegralVariablePostprocessor
     variable = q_prime
+    block = fuel_pins
   []
 []
 

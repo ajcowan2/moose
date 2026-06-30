@@ -38,7 +38,7 @@ unheated_length_exit = 0.855 #m
 
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = ${n_rings}
     n_cells = 65
     flat_to_flat = ${inner_duct_in}
@@ -53,16 +53,6 @@ unheated_length_exit = 0.855 #m
     spacer_k = '0.0'
   []
 
-  [fuel_pins]
-    type = SCMTriPinMeshGenerator
-    input = subchannel
-    nrings = ${n_rings}
-    n_cells = 65
-    unheated_length_entry = ${unheated_length_entry}
-    heated_length = ${heated_length}
-    unheated_length_exit = ${unheated_length_exit}
-    pitch = ${fuel_pin_pitch}
-  []
 []
 
 [Functions]
@@ -85,7 +75,6 @@ unheated_length_exit = 0.855 #m
   fp = water
   n_blocks = 1
   P_out = ${P_out}
-  CT = 2.6
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -95,11 +84,13 @@ unheated_length_exit = 0.855 #m
   segregated = false
   interpolation_scheme = 'upwind'
   verbose_subchannel = true
-  deformation = true
   # Heat Transfer Correlations
   pin_HTC_closure = 'gnielinski'
   # friction model
   friction_closure = 'cheng'
+  full_output = true
+  # Turbulent mixing Correlation
+  mixing_closure = 'cheng_todreas'
 []
 
 [SCMClosures]
@@ -109,18 +100,14 @@ unheated_length_exit = 0.855 #m
   [gnielinski]
     type = SCMHTCGnielinski
   []
+  [cheng_todreas]
+    type = SCMMixingChengTodreas
+    CT = 2.6
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMTriFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMTriWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMTriPowerIC
@@ -136,11 +123,6 @@ unheated_length_exit = 0.855 #m
     value = ${T_in}
   []
 
-  [Dpin_ic]
-    type = ConstantIC
-    variable = Dpin
-    value = ${fuel_pin_diameter}
-  []
 
   [P_ic]
     type = ConstantIC
@@ -238,7 +220,8 @@ unheated_length_exit = 0.855 #m
     variable = 'mdot SumWij P DP h T rho mu S displacement'
   []
   [pin_transfer]
-    type = SCMPinSolutionTransfer
+    type = SCMSolutionTransfer
+    transfer_type = pin
     to_multi_app = viz
     variable = 'Dpin Tpin q_prime'
   []

@@ -1,22 +1,25 @@
 #!/bin/bash
 
+# Only call once
+if [ "${_MOOSE_BASHRC_SET:-}" == 1 ]; then
+    return 0
+fi
+
 # Enable autocompletion
 if [ -f /etc/profile.d/bash_completion.sh ]; then
     source /etc/profile.d/bash_completion.sh
 fi
 
 # Setup prompt command
-PROMPT_COMMAND='if [[ $(type -t set_prompt) != function ]]; then source /.singularity.d/set_prompt.bash; fi; set_prompt'
-set_prompt () {
+export PROMPT_COMMAND='declare -F __set_moose_prompt > /dev/null && __set_moose_prompt'
+__set_moose_prompt () {
     if [ -n "${CUSTOM_PROMPT}" ]; then
         PS1="${CUSTOM_PROMPT}"
         return
     fi
 
-    local BOLD_RED='\[\e[01;31m\]'
     local GREEN='\[\e[00;32m\]'
     local PURPLE='\[\e[00;35m\]'
-    local RED='\[\e[00;31m\]'
     local TEAL='\[\e[00;36m\]'
     local WHITE='\[\e[00;37m\]'
     local YELLOW='\[\e[00;33m\]'
@@ -58,6 +61,7 @@ set_prompt () {
     # and reset the text color to the default.
     PS1+="${GREEN}\\\$${RESET} "
 }
+export -f __set_moose_prompt
 
 # Load user's custom bashrc if requested. Defaults to
 # ~/.bashrc_apptainer, but can be customized by setting
@@ -66,3 +70,6 @@ MOOSE_BASHRC="${MOOSE_BASHRC:-${HOME}/.bashrc_apptainer}"
 if test -f "$MOOSE_BASHRC"; then
     source "$MOOSE_BASHRC"
 fi
+
+# Set that we've been set
+export _MOOSE_BASHRC_SET=1

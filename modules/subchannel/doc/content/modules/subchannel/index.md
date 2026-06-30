@@ -15,7 +15,9 @@ Familiarize yourself with the theory behind SCM, some important user notes and h
 
 - [Theory](general/subchannel_theory.md)
 - [Running SCM input file](general/using_SubChannel.md)
+- [SCM AuxVariables](general/SCMAuxVariables.md)
 - [User Notes](general/user_notes.md)
+- [Mesh Generator Migration](general/mesh_generator_migration.md)
 - [Publication List](general/publication_list.md)
 !col-end!
 
@@ -64,7 +66,3 @@ computer scientists and engineers and is supported by various funding agencies,
 including the [United States Department of Energy](http://energy.gov).  Development
 of these codes is ongoing at [INL](https://www.inl.gov) and by collaborators
 throughout the world.
-
-## Tutorial style=clear:both
-
-Tutorial can be found [here](/modules/subchannel/tutorial/index.md optional=True)

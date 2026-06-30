@@ -35,7 +35,7 @@ function configure_petsc()
   EXTRA_CONFIGURE_OPTIONS=()
 
   # Use --with-make-np if MOOSE_JOBS is given
-  if [ -n "$MOOSE_JOBS" ]; then
+  if [ -n "${MOOSE_JOBS-}" ]; then
     EXTRA_CONFIGURE_OPTIONS+=("--with-make-np=$MOOSE_JOBS")
   fi
 
@@ -57,13 +57,13 @@ function configure_petsc()
   # Prioritize user-set environment variables HDF5_DIR, HDF5DIR, and HDF5_ROOT,
   # with the first taking the greatest priority
   local FOUND_HDF5_DIR=""
-  if [ -n "$HDF5_DIR" ]; then
+  if [ -n "${HDF5_DIR:-}" ]; then
     echo "INFO: HDF5 installation location was set using HDF5_DIR=$HDF5_DIR"
     FOUND_HDF5_DIR="$HDF5_DIR"
-  elif [ -n "$HDF5DIR" ]; then
+  elif [ -n "${HDF5DIR:-}" ]; then
     echo "INFO: HDF5 installation location was set using HDF5DIR=$HDF5DIR"
     FOUND_HDF5_DIR="$HDF5DIR"
-  elif [ -n "$HDF5_ROOT" ]; then
+  elif [ -n "${HDF5_ROOT:-}" ]; then
     echo "INFO: HDF5 installation location was set using HDF5_ROOT=$HDF5_ROOT"
     FOUND_HDF5_DIR="$HDF5_ROOT"
   fi
@@ -108,6 +108,7 @@ function configure_petsc()
   cd "$PETSC_DIR" || exit 1
   python3 ./configure --with-64-bit-indices \
       --with-cxx-dialect=C++17 \
+      --ignoreCxxBoundCheck=1 \
       --with-debugging=no \
       --with-fortran-bindings=0 \
       --with-mpi=1 \
@@ -128,10 +129,11 @@ function configure_petsc()
       --download-strumpack=1 \
       --download-superlu_dist=1 \
       --download-kokkos=1 \
+      --download-kokkos-commit=4.7.04 \
       --download-kokkos-kernels=1 \
+      --download-kokkos-kernels-commit=4.7.04 \
       --download-libceed=1 \
       --download-umpire \
-      --download-umpire-commit=v2025.12.0 \
       "${EXTRA_CONFIGURE_OPTIONS[@]}" \
       "$@"
 

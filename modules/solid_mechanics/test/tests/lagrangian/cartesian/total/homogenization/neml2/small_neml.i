@@ -25,7 +25,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix1_x]
     type = DirichletBC
     boundary = fix_all
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_x
@@ -37,7 +36,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix1_y]
     type = DirichletBC
     boundary = fix_all
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_y
@@ -49,7 +47,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix1_z]
     type = DirichletBC
     boundary = fix_all
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_z
@@ -61,7 +58,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix2_x]
     type = DirichletBC
     boundary = fix_xy
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_x
@@ -73,7 +69,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix2_y]
     type = DirichletBC
     boundary = fix_xy
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_y
@@ -85,7 +80,6 @@ targets = 'strain11 zero zero zero zero zero'
   [fix3_z]
     type = DirichletBC
     boundary = fix_z
-    displacements = 'disp_x disp_y disp_z'
     matrix_tags = 'system time'
     value = 0
     variable = disp_z
@@ -125,7 +119,7 @@ targets = 'strain11 zero zero zero zero zero'
   [neml2_stress_to_moose]
     type = NEML2ToMOOSESymmetricRankTwoTensorMaterialProperty
     block = ''
-    from_neml2 = state/S
+    from_neml2 = neml2_stress
     neml2_executor = neml2_model_all
     outputs = none
     to_moose = neml2_stress
@@ -133,11 +127,11 @@ targets = 'strain11 zero zero zero zero zero'
   [neml2_jacobian_to_moose]
     type = NEML2ToMOOSESymmetricRankFourTensorMaterialProperty
     block = ''
-    from_neml2 = state/S
+    from_neml2 = neml2_stress
     neml2_executor = neml2_model_all
-    neml2_input_derivative = forces/E
+    neml2_input_derivative = neml2_strain
     outputs = none
-    to_moose = neml2_jacobian
+    to_moose = dneml2_stress/dneml2_strain
   []
 []
 
@@ -153,7 +147,7 @@ targets = 'strain11 zero zero zero zero zero'
 [Materials]
   [stress]
     type = ComputeLagrangianObjectiveCustomSymmetricStress
-    custom_small_jacobian = neml2_jacobian
+    custom_small_jacobian = dneml2_stress/dneml2_strain
     custom_small_stress = neml2_stress
     large_kinematics = false
     outputs = none
@@ -178,12 +172,13 @@ targets = 'strain11 zero zero zero zero zero'
 []
 
 [UserObjects]
-  [moose_strain_to_jacobian]
-    type = MOOSESymmetricRankTwoTensorMaterialPropertyToNEML2
+  [moose_strain_to_neml2]
+    type = MOOSESymmetricRankTwoTensorToNEML2
     block = ''
     execute_on = 'INITIAL LINEAR NONLINEAR'
     from_moose = neml2_strain
-    to_neml2 = forces/E
+    quantity_type = MATERIAL
+    to_neml2 = neml2_strain
   []
   [neml2_index_model_all]
     type = NEML2BatchIndexGenerator
@@ -194,8 +189,8 @@ targets = 'strain11 zero zero zero zero zero'
     type = NEML2ModelExecutor
     batch_index_generator = neml2_index_model_all
     device = cpu
-    execute_on = 'INITIAL LINEAR NONLINEAR'
-    gatherers = moose_strain_to_jacobian
+    execute_on = 'INITIAL LINEAR NONLINEAR TIMESTEP_END'
+    gatherers = 'moose_strain_to_neml2'
     input = neml2_elastic.i
     model = model
     param_gatherers = ''

@@ -63,9 +63,6 @@
 #include "libmesh/enum_to_string.h"
 #include "libmesh/elem_side_builder.h"
 
-static const int GRAIN_SIZE =
-    1; // the grain_size does not have much influence on our execution speed
-
 using namespace libMesh;
 
 // Make newer nanoflann API compatible with older nanoflann versions
@@ -240,8 +237,6 @@ MooseMesh::MooseMesh(const InputParameters & parameters)
     _skip_refine_when_use_split(getParam<bool>("skip_refine_when_use_split")),
     _skip_deletion_repartition_after_refine(false),
     _is_nemesis(false),
-    _node_to_elem_map_built(false),
-    _node_to_active_semilocal_elem_map_built(false),
     _patch_size(getParam<unsigned int>("patch_size")),
     _ghosting_patch_size(isParamValid("ghosting_patch_size")
                              ? getParam<unsigned int>("ghosting_patch_size")
@@ -309,8 +304,6 @@ MooseMesh::MooseMesh(const MooseMesh & other_mesh)
     _skip_refine_when_use_split(other_mesh._skip_refine_when_use_split),
     _skip_deletion_repartition_after_refine(other_mesh._skip_deletion_repartition_after_refine),
     _is_nemesis(other_mesh._is_nemesis),
-    _node_to_elem_map_built(false),
-    _node_to_active_semilocal_elem_map_built(false),
     _patch_size(other_mesh._patch_size),
     _ghosting_patch_size(other_mesh._ghosting_patch_size),
     _max_leaf_size(other_mesh._max_leaf_size),
@@ -332,33 +325,6 @@ MooseMesh::MooseMesh(const MooseMesh & other_mesh)
     _provided_coord_blocks(other_mesh._provided_coord_blocks),
     _doing_p_refinement(other_mesh._doing_p_refinement)
 {
-  // Note: this calls BoundaryInfo::operator= without changing the
-  // ownership semantics of either Mesh's BoundaryInfo object.
-  getMesh().get_boundary_info() = other_mesh.getMesh().get_boundary_info();
-
-  const std::set<SubdomainID> & subdomains = other_mesh.meshSubdomains();
-  for (const auto & sbd_id : subdomains)
-    setSubdomainName(sbd_id, other_mesh.getMesh().subdomain_name(sbd_id));
-
-  // Get references to BoundaryInfo objects to make the code below cleaner...
-  const BoundaryInfo & other_boundary_info = other_mesh.getMesh().get_boundary_info();
-  BoundaryInfo & boundary_info = getMesh().get_boundary_info();
-
-  // Use the other BoundaryInfo object to build the list of side boundary ids
-  std::vector<BoundaryID> side_boundaries;
-  other_boundary_info.build_side_boundary_ids(side_boundaries);
-
-  // Assign those boundary ids in our BoundaryInfo object
-  for (const auto & side_bnd_id : side_boundaries)
-    boundary_info.sideset_name(side_bnd_id) = other_boundary_info.get_sideset_name(side_bnd_id);
-
-  // Do the same thing for node boundary ids
-  std::vector<BoundaryID> node_boundaries;
-  other_boundary_info.build_node_boundary_ids(node_boundaries);
-
-  for (const auto & node_bnd_id : node_boundaries)
-    boundary_info.nodeset_name(node_bnd_id) = other_boundary_info.get_nodeset_name(node_bnd_id);
-
   _bounds.resize(other_mesh._bounds.size());
   for (std::size_t i = 0; i < _bounds.size(); ++i)
   {
@@ -420,7 +386,7 @@ MooseMesh::prepare(const MeshBase * const mesh_to_clone)
 {
   TIME_SECTION("prepare", 2, "Preparing Mesh", true);
 
-  bool called_prepare_for_use = false;
+  bool libmesh_mesh_prepared = false;
 
   mooseAssert(_mesh, "The MeshBase has not been constructed");
 
@@ -437,13 +403,13 @@ MooseMesh::prepare(const MeshBase * const mesh_to_clone)
   }
   else if (!_mesh->is_prepared())
   {
-    _mesh->prepare_for_use();
+    _mesh->complete_preparation();
     _moose_mesh_prepared = false;
-    called_prepare_for_use = true;
+    libmesh_mesh_prepared = true;
   }
 
   if (_moose_mesh_prepared)
-    return called_prepare_for_use;
+    return libmesh_mesh_prepared;
 
   // Collect (local) subdomain IDs
   _mesh_subdomains.clear();
@@ -622,7 +588,24 @@ MooseMesh::prepare(const MeshBase * const mesh_to_clone)
 
   _moose_mesh_prepared = true;
 
-  return called_prepare_for_use;
+  return libmesh_mesh_prepared;
+}
+
+bool
+MooseMesh::possiblyRebuildNodeToElemMap()
+{
+  // *Rebuild* the node to element map. I emphasize rebuild because if it has not been built
+  // previously we won't do anything
+  if (!_node_to_elem_map_built)
+  {
+    mooseAssert(_node_to_elem_map.empty(), "If it hasn't been built, it better well be empty");
+    return false;
+  }
+
+  _node_to_elem_map.clear();
+  _node_to_elem_map_built = false;
+  internalNodeToElemMap();
+  return true;
 }
 
 void
@@ -632,10 +615,6 @@ MooseMesh::update()
 
   // Rebuild the boundary conditions
   buildNodeListFromSideList();
-
-  // Clear the node to elem maps
-  _node_to_elem_map.clear();
-  _node_to_active_semilocal_elem_map.clear();
 
   buildNodeList();
   buildBndElemList();
@@ -669,19 +648,7 @@ MooseMesh::update()
 
   _finite_volume_info_dirty = true;
 
-  // Rebuild the node to elem maps, in case the object(s) who got references to the maps
-  // actually do need to use them
-  if (_node_to_elem_map_built)
-  {
-    // it won't stay false
-    _node_to_elem_map_built = false;
-    nodeToElemMap();
-  }
-  if (_node_to_active_semilocal_elem_map_built)
-  {
-    _node_to_active_semilocal_elem_map_built = false;
-    nodeToActiveSemilocalElemMap();
-  }
+  possiblyRebuildNodeToElemMap();
 }
 
 void
@@ -1227,8 +1194,8 @@ MooseMesh::buildBndElemList()
   }
 }
 
-const std::map<dof_id_type, std::vector<dof_id_type>> &
-MooseMesh::nodeToElemMap()
+std::unordered_map<dof_id_type, std::vector<dof_id_type>> &
+MooseMesh::internalNodeToElemMap()
 {
   if (!_node_to_elem_map_built) // Guard the creation with a double checked lock
   {
@@ -1245,6 +1212,7 @@ MooseMesh::nodeToElemMap()
       TIME_SECTION("nodeToElemMap", 5, "Building Node To Elem Map");
       Threads::in_threads = in_threads;
 
+      mooseAssert(_node_to_elem_map.empty(), "Expected empty map before building");
       for (const auto & elem : getMesh().active_element_ptr_range())
         for (unsigned int n = 0; n < elem->n_nodes(); n++)
           _node_to_elem_map[elem->node_id(n)].push_back(elem->id());
@@ -1255,36 +1223,10 @@ MooseMesh::nodeToElemMap()
   return _node_to_elem_map;
 }
 
-const std::map<dof_id_type, std::vector<dof_id_type>> &
-MooseMesh::nodeToActiveSemilocalElemMap()
+const std::unordered_map<dof_id_type, std::vector<dof_id_type>> &
+MooseMesh::nodeToElemMap()
 {
-  if (!_node_to_active_semilocal_elem_map_built) // Guard the creation with a double checked lock
-  {
-    Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
-
-    // This is allowing the timing to be run even with threads
-    // This is safe because all threads will be waiting on this section when it runs
-    // NOTE: Do not copy this construction to other places without thinking REALLY hard about it
-    // The PerfGraph is NOT threadsafe and will cause all kinds of havok if care isn't taken
-    auto in_threads = Threads::in_threads;
-    Threads::in_threads = false;
-    TIME_SECTION("nodeToActiveSemilocalElemMap", 5, "Building SemiLocalElemMap");
-    Threads::in_threads = in_threads;
-
-    if (!_node_to_active_semilocal_elem_map_built)
-    {
-      for (const auto & elem :
-           as_range(getMesh().semilocal_elements_begin(), getMesh().semilocal_elements_end()))
-        if (elem->active())
-          for (unsigned int n = 0; n < elem->n_nodes(); n++)
-            _node_to_active_semilocal_elem_map[elem->node_id(n)].push_back(elem->id());
-
-      _node_to_active_semilocal_elem_map_built =
-          true; // MUST be set at the end for double-checked locking to work!
-    }
-  }
-
-  return _node_to_active_semilocal_elem_map;
+  return internalNodeToElemMap();
 }
 
 ConstElemRange *
@@ -1295,7 +1237,7 @@ MooseMesh::getActiveLocalElementRange()
     TIME_SECTION("getActiveLocalElementRange", 5);
 
     _active_local_elem_range = std::make_unique<ConstElemRange>(
-        getMesh().active_local_elements_begin(), getMesh().active_local_elements_end(), GRAIN_SIZE);
+        getMesh().active_local_elements_begin(), getMesh().active_local_elements_end());
   }
 
   return _active_local_elem_range.get();
@@ -1308,8 +1250,8 @@ MooseMesh::getActiveNodeRange()
   {
     TIME_SECTION("getActiveNodeRange", 5);
 
-    _active_node_range = std::make_unique<NodeRange>(
-        getMesh().active_nodes_begin(), getMesh().active_nodes_end(), GRAIN_SIZE);
+    _active_node_range =
+        std::make_unique<NodeRange>(getMesh().active_nodes_begin(), getMesh().active_nodes_end());
   }
 
   return _active_node_range.get();
@@ -1331,8 +1273,8 @@ MooseMesh::getLocalNodeRange()
   {
     TIME_SECTION("getLocalNodeRange", 5);
 
-    _local_node_range = std::make_unique<ConstNodeRange>(
-        getMesh().local_nodes_begin(), getMesh().local_nodes_end(), GRAIN_SIZE);
+    _local_node_range = std::make_unique<ConstNodeRange>(getMesh().local_nodes_begin(),
+                                                         getMesh().local_nodes_end());
   }
 
   return _local_node_range.get();
@@ -1345,8 +1287,7 @@ MooseMesh::getBoundaryNodeRange()
   {
     TIME_SECTION("getBoundaryNodeRange", 5);
 
-    _bnd_node_range =
-        std::make_unique<ConstBndNodeRange>(bndNodesBegin(), bndNodesEnd(), GRAIN_SIZE);
+    _bnd_node_range = std::make_unique<ConstBndNodeRange>(bndNodesBegin(), bndNodesEnd());
   }
 
   return _bnd_node_range.get();
@@ -1359,8 +1300,7 @@ MooseMesh::getBoundaryElementRange()
   {
     TIME_SECTION("getBoundaryElementRange", 5);
 
-    _bnd_elem_range =
-        std::make_unique<ConstBndElemRange>(bndElemsBegin(), bndElemsEnd(), GRAIN_SIZE);
+    _bnd_elem_range = std::make_unique<ConstBndElemRange>(bndElemsBegin(), bndElemsEnd());
   }
 
   return _bnd_elem_range.get();
@@ -1469,7 +1409,7 @@ MooseMesh::cacheInfo()
   _lower_d_interior_blocks.clear();
   _lower_d_boundary_blocks.clear();
 
-  auto & mesh = getMesh();
+  const auto & mesh = getMesh();
 
   // Cache higher and lowerD element information
   for (const auto & elem : mesh.element_ptr_range())
@@ -1505,7 +1445,7 @@ MooseMesh::cacheInfo()
 
     for (unsigned int nd = 0; nd < elem->n_nodes(); ++nd)
     {
-      Node & node = *elem->node_ptr(nd);
+      const Node & node = *elem->node_ptr(nd);
       _block_node_list[node.id()].insert(elem->subdomain_id());
     }
   }
@@ -1523,7 +1463,7 @@ MooseMesh::cacheInfo()
       const auto & boundary_ids = elem_boundary_ids[side];
       sub_data.boundary_ids.insert(boundary_ids.begin(), boundary_ids.end());
 
-      Elem * neig = elem->neighbor_ptr(side);
+      const Elem * neig = elem->neighbor_ptr(side);
       if (neig)
       {
         _neighbor_subdomain_boundary_ids[neig->subdomain_id()].insert(boundary_ids.begin(),
@@ -1687,13 +1627,7 @@ MooseMesh::addQuadratureNode(const Elem * elem,
     _elem_to_side_to_qp_to_quadrature_nodes[elem->id()][side][qp] = qnode;
 
     if (elem->active())
-    {
-      // If they have not been built, no need to start building an incomplete one
-      if (_node_to_elem_map_built)
-        _node_to_elem_map[new_id].push_back(elem->id());
-      if (_node_to_active_semilocal_elem_map_built)
-        _node_to_active_semilocal_elem_map[new_id].push_back(elem->id());
-    }
+      internalNodeToElemMap()[new_id].push_back(elem->id());
   }
   else
     qnode = _elem_to_side_to_qp_to_quadrature_nodes[elem->id()][side][qp];
@@ -1739,7 +1673,7 @@ MooseMesh::clearQuadratureNodes()
   _elem_to_side_to_qp_to_quadrature_nodes.clear();
   _extra_bnd_nodes.clear();
 
-  // NOTE: this does not clear them from the nodeToElem and nodeToActiveSemiLocalElem maps
+  // NOTE: this does not clear them from the nodeToElem map
 }
 
 BoundaryID
@@ -2923,6 +2857,9 @@ MooseMesh::changeBoundaryId(MeshBase & mesh,
   // from showing up when printing information, etc.
   if (delete_prev)
     boundary_info.remove_id(old_id);
+
+  // The cached boundary id sets will need re-preparation
+  mesh.unset_has_boundary_id_sets();
 }
 
 const RealVectorValue &

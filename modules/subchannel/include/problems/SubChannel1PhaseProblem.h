@@ -25,6 +25,7 @@
 class SinglePhaseFluidProperties;
 class SCMFrictionClosureBase;
 class SCMHTCClosureBase;
+class SCMMixingClosureBase;
 
 /**
  * Base class for the 1-phase steady-state/transient subchannel solver.
@@ -87,6 +88,18 @@ public:
     return computeAddedHeatDuct(i_ch, iz);
   }
 
+  /// Outlet pressure postprocessor value
+  const PostprocessorValue & _P_out;
+
+  /// Get outlet pressure
+  const PostprocessorValue & getOutletPressure() const { return _P_out; }
+
+  /// Non-owning pointer to fluid properties user object
+  const SinglePhaseFluidProperties * _fp;
+
+  /// Get fluid properties object
+  const SinglePhaseFluidProperties * getSinglePhaseFluidProperties() const { return _fp; }
+
 protected:
   /// Pure virtual: daughters provide different implementations
   virtual Real computeAddedHeatPin(unsigned int i_ch, unsigned int iz) const = 0;
@@ -102,8 +115,10 @@ protected:
   void computeMdot(int iblock);
   /// Computes turbulent crossflow per gap for block iblock
   void computeWijPrime(int iblock);
-  /// Computes turbulent mixing coefficient
-  virtual Real computeBeta(unsigned int i_gap, unsigned int iz, bool enthalpy) = 0;
+  /// Computes and validates the turbulent mixing parameter
+  Real computeMixingParameter(unsigned int i_gap, unsigned int iz) const;
+  /// Computes and validates the sweep-flow mixing parameter
+  Real computeSweepFlowMixingParameter(unsigned int i_gap, unsigned int iz) const;
   /// Computes Pressure Drop per channel for block iblock
   void computeDP(int iblock);
   /// Computes Pressure per channel for block iblock
@@ -134,6 +149,8 @@ protected:
 
   /// Function to initialize the solution & geometry fields
   virtual void initializeSolution() = 0;
+  /// Detects whether pin diameter or duct displacement fields require geometry recalculation
+  void detectDeformation();
 
   /// Functions that computes the interpolation scheme given the Peclet number
   PetscScalar computeInterpolationCoefficients(PetscScalar Peclet = 0.0);
@@ -176,6 +193,7 @@ protected:
   SubChannelMesh & _subchannel_mesh;
   /// number of axial blocks
   unsigned int _n_blocks;
+  libMesh::DenseMatrix<Real> _DP;
   libMesh::DenseMatrix<Real> & _Wij;
   libMesh::DenseMatrix<Real> _Wij_old;
   libMesh::DenseMatrix<Real> _WijPrime;
@@ -204,12 +222,12 @@ protected:
   const bool _duct_mesh_exist;
   /// Variable that informs whether we exited external solve with a converged solution or not
   bool _converged;
+  /// Whether the time integrator has been checked for consistency with the implementation
+  bool _time_integrator_checked = false;
   /// Time step
   Real _dt;
-  /// Outlet Pressure
-  const PostprocessorValue & _P_out;
   /// Turbulent modeling parameter used in axial momentum equation
-  const Real & _CT;
+  Real _CT;
   /// Convergence tolerance for the pressure loop in external solve
   const Real & _P_tol;
   /// Convergence tolerance for the temperature loop in internal solve
@@ -238,12 +256,11 @@ protected:
   /// Boolean to printout information related to subchannel solve
   const bool _verbose_subchannel;
   /// Flag that activates the effect of deformation (pin/duct) based on the auxvalues for displacement, Dpin
-  const bool _deformation;
-
-  /// Fluid properties object
-  const SinglePhaseFluidProperties * _fp;
+  bool _deformation = false;
   /// Friction closure object
   const SCMFrictionClosureBase * _friction_closure;
+  /// Turbulent Mixing closure object
+  const SCMMixingClosureBase * _mixing_closure;
   /// HTC closure objects
   const SCMHTCClosureBase * _pin_HTC_closure;
   const SCMHTCClosureBase * _duct_HTC_closure;
@@ -266,6 +283,7 @@ protected:
   std::unique_ptr<SolutionHandle> _Tduct_soln;          // Only used for ducted assemblies
   std::unique_ptr<SolutionHandle> _displacement_soln;
   std::unique_ptr<SolutionHandle> _ff_soln;
+  std::unique_ptr<SolutionHandle> _HTC_soln;
 
   /// Petsc Functions
   inline PetscErrorCode createPetscVector(Vec & v, PetscInt n)

@@ -11,8 +11,8 @@ coil_conductivity = 1.0
 []
 
 [Mesh]
-    type = MFEMMesh
-    file = ../mesh/embedded_concentric_torus.e
+  type = MFEMMesh
+  file = ../mesh/embedded_concentric_torus.e
 []
 
 [FunctorMaterials]
@@ -44,7 +44,6 @@ coil_conductivity = 1.0
   [coil]
     type = MFEMDomainSubMesh
     block = coil_dom
-    execution_order_group = 2
   []
 []
 
@@ -143,7 +142,6 @@ coil_conductivity = 1.0
     variable = e_field
     source_variables = 'induced_e_field external_e_field'
     execute_on = TIMESTEP_END
-    execution_order_group = 3
   []
 []
 
@@ -162,8 +160,10 @@ coil_conductivity = 1.0
   []
 []
 
-[Solver]
-  type = MFEMSuperLU
+[Solvers]
+  [main]
+    type = MFEMSuperLU
+  []
 []
 
 [Executioner]
@@ -188,7 +188,6 @@ coil_conductivity = 1.0
     from_variable = transition_external_e_field
     to_variable = external_e_field
     execute_on = TIMESTEP_END
-    execution_order_group = 2
   []
 []
 
