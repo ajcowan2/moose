@@ -17,7 +17,7 @@ registerMooseObject("MooseApp", MFEMHypreGMRES);
 InputParameters
 MFEMHypreGMRES::validParams()
 {
-  InputParameters params = MFEMSolverBase::validParams();
+  InputParameters params = Moose::MFEM::LinearSolverBase::validParams();
   params.addClassDescription("Hypre solver for the iterative solution of MFEM equation systems "
                              "using the generalized minimal residual method.");
 
@@ -26,44 +26,48 @@ MFEMHypreGMRES::validParams()
   params.addParam<int>("l_max_its", 10000, "Set the maximum number of iterations.");
   params.addParam<int>("kdim", 10, "Set the k-dimension.");
   params.addParam<int>("print_level", 2, "Set the solver verbosity.");
-  params.addParam<UserObjectName>("preconditioner", "Optional choice of preconditioner to use.");
+  params.addParam<MFEMSolverName>("preconditioner", "Optional choice of preconditioner to use.");
 
   return params;
 }
 
-MFEMHypreGMRES::MFEMHypreGMRES(const InputParameters & parameters) : MFEMSolverBase(parameters)
+MFEMHypreGMRES::MFEMHypreGMRES(const InputParameters & parameters)
+  : Moose::MFEM::LinearSolverBase(parameters)
 {
-  constructSolver();
+  ConstructSolver();
 }
 
 void
-MFEMHypreGMRES::constructSolver()
+MFEMHypreGMRES::ConstructSolver()
 {
-  auto solver = std::make_unique<mfem::patched::HypreGMRES>(getMFEMProblem().getComm());
+  auto solver = std::make_unique<mfem::HypreGMRES>(getMFEMProblem().getComm());
+  solver->iterative_mode = getParam<bool>("use_initial_guess");
   solver->SetTol(getParam<mfem::real_t>("l_tol"));
   solver->SetAbsTol(getParam<mfem::real_t>("l_abs_tol"));
   solver->SetMaxIter(getParam<int>("l_max_its"));
   solver->SetKDim(getParam<int>("kdim"));
   solver->SetPrintLevel(getParam<int>("print_level"));
-  setPreconditioner(*solver);
+  SetPreconditioner(*solver);
   _solver = std::move(solver);
 }
 
 void
-MFEMHypreGMRES::updateSolver(mfem::ParBilinearForm & a, mfem::Array<int> & tdofs)
+MFEMHypreGMRES::SetupLOR(mfem::ParBilinearForm & a, mfem::Array<int> & ess_bdr_markers)
 {
   if (_lor && _preconditioner)
     mooseError("LOR solver cannot take a preconditioner");
 
+  mfem::Array<int> ess_tdofs;
+  a.ParFESpace()->GetEssentialTrueDofs(ess_bdr_markers, ess_tdofs);
   if (_preconditioner)
   {
-    _preconditioner->updateSolver(a, tdofs);
-    setPreconditioner(static_cast<mfem::HypreGMRES &>(*_solver));
+    _preconditioner->SetupLOR(a, ess_tdofs);
+    SetPreconditioner(static_cast<mfem::HypreGMRES &>(*_solver));
   }
   else if (_lor)
   {
-    checkSpectralEquivalence(a);
-    mfem::ParLORDiscretization lor_disc(a, tdofs);
+    CheckSpectralEquivalence(a);
+    mfem::ParLORDiscretization lor_disc(a, ess_tdofs);
     auto lor_solver = new mfem::LORSolver<mfem::HypreGMRES>(lor_disc, getMFEMProblem().getComm());
     lor_solver->GetSolver().SetTol(getParam<mfem::real_t>("l_tol"));
     lor_solver->GetSolver().SetAbsTol(getParam<mfem::real_t>("l_abs_tol"));

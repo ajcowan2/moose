@@ -34,6 +34,9 @@ public:
   // Unused for Kokkos user objects because all subdomains are computed in parallel
   virtual void subdomainSetup() override final {}
 
+  // Kokkos user objects are never threaded
+  virtual bool needThreadedCopy() const override final { return false; }
+
   /**
    * Compute this user object
    */
@@ -66,6 +69,21 @@ public:
   {
     return &UserObject::execute<Derived>;
   }
+
+protected:
+  /**
+   * Dispatch parallel operation
+   */
+  virtual void computeUserObject();
+  /**
+   * Get the number of threads
+   */
+  virtual ThreadID numUserObjectThreads() const = 0;
+
+  /**
+   * Kokkos functor dispatcher
+   */
+  std::unique_ptr<DispatcherBase> _user_object_dispatcher;
 };
 
 } // namespace Moose::Kokkos

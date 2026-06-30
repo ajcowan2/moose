@@ -8,7 +8,7 @@ P_out = 4.923e6 # Pa
 
 [QuadSubChannelMesh]
   [sub_channel]
-    type = SCMQuadSubChannelMeshGenerator
+    type = SCMQuadAssemblyMeshGenerator
     nx = 6
     ny = 6
     n_cells = 50
@@ -40,8 +40,6 @@ P_out = 4.923e6 # Pa
   type = QuadSubChannel1PhaseProblem
   fp = water
   n_blocks = 1
-  beta = 0.006
-  CT = 2.0
   P_tol = 1e-6
   T_tol = 1e-6
   compute_density = true
@@ -50,13 +48,22 @@ P_out = 4.923e6 # Pa
   P_out = ${P_out}
   restart_file_base = psbt_SS_out_cp/LATEST
   skip_additional_restart_data = true
-  # friction model
   friction_closure = 'MATRA'
+  mixing_closure ='constant_beta'
+  pin_HTC_closure = 'Dittus-Boelter'
 []
 
 [SCMClosures]
   [MATRA]
     type = SCMFrictionMATRA
+  []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.006
+    CT = 2.0
+  []
+  [Dittus-Boelter]
+    type = SCMHTCDittusBoelter
   []
 []
 
@@ -105,15 +112,7 @@ P_out = 4.923e6 # Pa
 []
 
 [ICs]
-  [S_IC]
-    type = SCMQuadFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMQuadWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMQuadPowerIC

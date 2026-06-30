@@ -11,6 +11,7 @@
 
 #include "KokkosUserObject.h"
 #include "KokkosNodalReducer.h"
+#include "KokkosMaterialPropertyValue.h"
 
 #include "CoupleableMooseVariableDependencyIntermediateInterface.h"
 #include "TransientInterface.h"
@@ -46,7 +47,10 @@ public:
   using NodalReducer::operator();
 
 protected:
-  virtual void computeUserObject();
+  virtual ThreadID numUserObjectThreads() const override
+  {
+    return _bnd ? numKokkosBoundaryNodes() : numKokkosBlockNodes();
+  }
 };
 
 template <typename Derived>

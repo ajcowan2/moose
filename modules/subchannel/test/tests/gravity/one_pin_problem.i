@@ -20,12 +20,7 @@ heated_length = 1.0
 
 [QuadSubChannelMesh]
     [subchannel]
-        type = SCMQuadSubChannelMeshGenerator
-    []
-
-    [fuel_pins]
-        type = SCMQuadPinMeshGenerator
-        input = subchannel
+        type = SCMQuadAssemblyMeshGenerator
     []
 []
 
@@ -48,8 +43,6 @@ heated_length = 1.0
     type = QuadSubChannel1PhaseProblem
     fp = water
     n_blocks = 1
-    beta = 0.006
-    CT = 2.6
     compute_density = true
     compute_viscosity = true
     compute_power = true
@@ -57,7 +50,8 @@ heated_length = 1.0
     verbose_subchannel = true
     friction_closure = 'MATRA'
     pin_HTC_closure = 'Dittus-Boelter'
-
+  full_output = true
+  mixing_closure ='constant_beta'
 []
 
 [SCMClosures]
@@ -67,19 +61,14 @@ heated_length = 1.0
   [Dittus-Boelter]
     type = SCMHTCDittusBoelter
   []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.006
+    CT = 2.6
+  []
 []
 
 [ICs]
-    [S_IC]
-        type = SCMQuadFlowAreaIC
-        variable = S
-    []
-
-    [w_perim_IC]
-        type = SCMQuadWettedPerimIC
-        variable = w_perim
-    []
-
     [q_prime_IC]
         type = SCMQuadPowerIC
         variable = q_prime
@@ -91,12 +80,6 @@ heated_length = 1.0
         type = ConstantIC
         variable = T
         value = ${T_in}
-    []
-
-    [Dpin_ic]
-        type = ConstantIC
-        variable = Dpin
-        value = 0.00950
     []
 
     [P_ic]

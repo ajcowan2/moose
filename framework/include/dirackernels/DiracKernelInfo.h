@@ -11,6 +11,7 @@
 
 #include "Moose.h"
 #include "MooseTypes.h"
+#include "MooseEnum.h"
 
 #include <set>
 #include <map>
@@ -18,6 +19,7 @@
 
 // Forward declarations
 class MooseMesh;
+class MooseBase;
 
 namespace libMesh
 {
@@ -43,8 +45,9 @@ public:
    * Adds a point source
    * @param elem Pointer to the geometric element in which the point is located
    * @param p The (x,y,z) location of the Dirac point
+   * @param value The value accumulated for this point when it coincides with an existing point
    */
-  void addPoint(const Elem * elem, const Point & p);
+  void addPoint(const Elem * elem, const Point & p, const Real & value = 1);
 
   /**
    * Remove all of the current points and elements.
@@ -61,8 +64,7 @@ public:
    */
   std::set<const Elem *> & getElements() { return _elements; }
 
-  typedef std::map<const Elem *, std::pair<std::vector<Point>, std::vector<unsigned int>>>
-      MultiPointMap;
+  typedef std::map<const Elem *, std::pair<std::vector<Point>, std::vector<Real>>> MultiPointMap;
 
   /**
    * Returns a writeable reference to the _points container.
@@ -75,12 +77,23 @@ public:
    */
   void updatePointLocator(const MooseMesh & mesh);
 
+  /// Point-not-found behavior
+  CreateMooseEnumClass(PointNotFoundBehavior, ERROR, WARNING, IGNORE);
+
   /**
    * Used by client DiracKernel classes to determine the Elem in which
    * the Point p resides.  Uses the PointLocator owned by this object.
+   * @param p the point to find the element which contains it
+   * @param mesh the mesh with elements to look at
+   * @param blocks block restriction to find the element in
+   * @param point_not_found_behavior what to do if the point is not found
+   * @param consumer the object calling calling this routine
    */
-  const Elem *
-  findPoint(const Point & p, const MooseMesh & mesh, const std::set<SubdomainID> & blocks);
+  const Elem * findPoint(const Point & p,
+                         const MooseMesh & mesh,
+                         const std::set<SubdomainID> & blocks,
+                         const PointNotFoundBehavior point_not_found_behavior,
+                         const MooseBase & consumer);
 
 protected:
   /**

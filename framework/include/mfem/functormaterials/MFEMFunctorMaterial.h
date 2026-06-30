@@ -11,18 +11,17 @@
 
 #pragma once
 
-#include "MFEMGeneralUserObject.h"
+#include "MFEMObject.h"
 #include "MFEMBlockRestrictable.h"
 #include "MFEMBoundaryRestrictable.h"
 #include "CoefficientManager.h"
 
-class MFEMFunctorMaterial : public MFEMGeneralUserObject,
+class MFEMFunctorMaterial : public MFEMObject,
                             public MFEMBlockRestrictable,
                             public MFEMBoundaryRestrictable
 {
 public:
   static InputParameters validParams();
-  static libMesh::Point pointFromMFEMVector(const mfem::Vector & vec);
 
   MFEMFunctorMaterial(const InputParameters & parameters);
   virtual ~MFEMFunctorMaterial();

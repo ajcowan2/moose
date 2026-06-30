@@ -11,6 +11,7 @@
 
 #include "KokkosUserObject.h"
 #include "KokkosSideReducer.h"
+#include "KokkosMaterialPropertyValue.h"
 
 #include "BoundaryRestrictableRequired.h"
 #include "MaterialPropertyInterface.h"
@@ -49,7 +50,7 @@ public:
   using SideReducer::operator();
 
 protected:
-  virtual void computeUserObject();
+  virtual ThreadID numUserObjectThreads() const override { return numKokkosBoundarySides(); }
 };
 
 template <typename Derived>

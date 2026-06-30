@@ -4,7 +4,7 @@ mass_flux_in = '${fparse 1e+6 * 37.00 / 36000.*0.5}'
 P_out = 2.0e5 # Pa
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = 4
     n_cells = 20
     flat_to_flat = 0.085
@@ -24,12 +24,53 @@ P_out = 2.0e5 # Pa
   []
 []
 
+[AuxVariables]
+  [mdot]
+    block = subchannel
+  []
+  [SumWij]
+    block = subchannel
+  []
+  [P]
+    block = subchannel
+  []
+  [DP]
+    block = subchannel
+  []
+  [h]
+    block = subchannel
+  []
+  [T]
+    block = subchannel
+  []
+  [Tpin]
+    block = fuel_pins
+  []
+  [Dpin]
+    block = fuel_pins
+  []
+  [rho]
+    block = subchannel
+  []
+  [mu]
+    block = subchannel
+  []
+  [S]
+    block = subchannel
+  []
+  [w_perim]
+    block = subchannel
+  []
+  [q_prime]
+    block = fuel_pins
+  []
+[]
+
 [SubChannel]
   type = TriSubChannel1PhaseProblem
   fp = sodium
   n_blocks = 1
   P_out = 2.0e5
-  CT = 1.0
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -40,32 +81,40 @@ P_out = 2.0e5 # Pa
   staggered_pressure = false
   verbose_multiapps = true
   verbose_subchannel = false
+  pin_HTC_closure = 'Dittus-Boelter'
   # friction model
   friction_closure = 'cheng'
+  full_output = true
+  mixing_closure = 'cheng_todreas'
+
 []
 
 [SCMClosures]
   [cheng]
     type = SCMFrictionUpdatedChengTodreas
   []
+  [cheng_todreas]
+    type = SCMMixingChengTodreas
+  []
+  [Dittus-Boelter]
+    type = SCMHTCDittusBoelter
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMTriFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMTriWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMTriPowerIC
     variable = q_prime
     power = 1.000e5 # W
     filename = "pin_power_profile_37.txt"
+  []
+
+  [Dpin_ic]
+    type = ConstantIC
+    variable = Dpin
+    value = 0.01
   []
 
   [T_ic]
@@ -169,10 +218,17 @@ P_out = 2.0e5 # Pa
   []
 []
 
+###### Transfers to the detailedMesh at the end of the coupled simulations
 [Transfers]
-  [xfer]
+  [subchannel_transfer]
     type = SCMSolutionTransfer
     to_multi_app = viz
-    variable = 'mdot SumWij P DP h T rho mu q_prime S'
+    variable = 'mdot SumWij P DP h T rho mu S'
+  []
+  [pin_transfer]
+    type = SCMSolutionTransfer
+    transfer_type = pin
+    to_multi_app = viz
+    variable = 'Tpin q_prime'
   []
 []

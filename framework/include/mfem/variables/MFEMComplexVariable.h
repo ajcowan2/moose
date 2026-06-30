@@ -3,12 +3,12 @@
 #pragma once
 
 #include "MFEMFESpace.h"
-#include "MFEMGeneralUserObject.h"
+#include "MFEMObject.h"
 
 /**
  * Constructs and stores an mfem::ParComplexGridFunction object.
  */
-class MFEMComplexVariable : public MFEMGeneralUserObject
+class MFEMComplexVariable : public MFEMObject
 {
 public:
   static InputParameters validParams();
@@ -23,6 +23,9 @@ public:
 
   /// Returns a reference to the fespace used by the gridfunction.
   inline const MFEMFESpace & getFESpace() const { return _fespace; }
+
+  // Declare default coefficients associated with this complex gridfunction.
+  void declareCoefficients();
 
 protected:
   const MFEMFESpace & _fespace;

@@ -11,6 +11,7 @@
 
 #include "CSGBase.h"
 #include "CSGSphere.h"
+#include "CSGPlane.h"
 #include "CSGXCylinder.h"
 #include "CSGCartesianLattice.h"
 #include "CSGHexagonalLattice.h"
@@ -37,6 +38,9 @@ TEST(CSGBaseTest, testAddGetSurface)
   const auto & added_surf = csg_obj->addSurface(std::move(surf_ptr1));
   // assert surface is present after adding by successfully using getSurfaceByName
   {
+    // check for whether surface with given name exists in CSGBase
+    ASSERT_FALSE(csg_obj->hasSurface("dummy"));
+    ASSERT_TRUE(csg_obj->hasSurface("surf"));
     // public method, returns const
     ASSERT_TRUE(added_surf == csg_obj->getSurfaceByName("surf"));
     // private method, returns non-const
@@ -1290,7 +1294,7 @@ TEST(CSGBaseTest, joinOtherBaseJoinRoot)
   // base1 ROOT_UNIVERSE will gain all cells from base2 ROOT_UNIVERSE
   // base2 ROOT_UNIVERSE will not exist as a separate universe
   // the "extra_univ" from base2 and "univ_in_lat" from base1 will remain separate universes
-  base1->joinOtherBase(std::move(base2));
+  base1->joinOtherBase(std::move(base2), false);
 
   // expect 3 universes: root, extra, lattice universe
   // 3 cells: 2 owned by root, 1 owned by extra
@@ -1338,7 +1342,7 @@ TEST(CSGBaseTest, joinOtherBaseOneNewRoot)
   // all cells from ROOT_UNIVERSE in base2 create new universe called "new_univ"
   // the "extra_univ" from base2 and "univ_in_lat" from base1 will remain separate universes
   std::string new_root_name = "new_univ";
-  base1->joinOtherBase(std::move(base2), new_root_name);
+  base1->joinOtherBase(std::move(base2), false, new_root_name);
 
   // expect 4 universes: root, extra, new, and lat
   // 3 cells: 1 owned by root, 1 owned by new, 1 owned by extra
@@ -1393,7 +1397,7 @@ TEST(CSGBaseTest, joinOtherBaseTwoNewRoot)
   // the "extra_univ" from base2 and "univ_in_lat" from base1 will remain separate universes
   std::string new_name1 = "new_univ1";
   std::string new_name2 = "new_univ2";
-  base1->joinOtherBase(std::move(base2), new_name1, new_name2);
+  base1->joinOtherBase(std::move(base2), false, new_name1, new_name2);
 
   // expect 5 universes: root, extra, lat, new1 and new2
   // 3 cells: 0 owned by root, 1 owned by new1, 1 owned by new2, 1 owned by extra
@@ -1416,6 +1420,293 @@ TEST(CSGBaseTest, joinOtherBaseTwoNewRoot)
   ASSERT_EQ(2, base1->getAllSurfaces().size());
   // expect 1 lattice
   ASSERT_EQ(1, base1->getAllLattices().size());
+}
+
+/// test CSGBase::joinOtherBase with identical surfaces
+TEST(CSGBaseTest, joinOtherBaseIgnoreIdenticalSurface)
+{
+  // Create two CSGBase objects to join together into a single root
+  // Both of these CSGBase objects will contain the identical surface based on its member data
+  // Upon joining these CSGBases, the identical surface will be discarded and not inserted
+  // into the combined CSGBase object
+
+  // CSGBase 1: only one cell with a region defined by the positive halfspace of a plane
+  std::unique_ptr<CSGBase> base1 = std::make_unique<CSG::CSGBase>();
+  std::unique_ptr<CSG::CSGPlane> surf_ptr1 = std::make_unique<CSG::CSGPlane>("s1", 1, 1, 1, 1);
+  const auto & surf1 = base1->addSurface(std::move(surf_ptr1));
+  base1->createCell("c1", +surf1);
+
+  // CSGBase 2: only one cell with a region defined by the negative halfspace of the same plane
+  std::unique_ptr<CSGBase> base2 = std::make_unique<CSG::CSGBase>();
+  std::unique_ptr<CSG::CSGPlane> surf_ptr2 = std::make_unique<CSG::CSGPlane>("s1", 1, 1, 1, 1);
+  const auto & surf2 = base2->addSurface(std::move(surf_ptr2));
+  base2->createCell("c2", -surf2);
+
+  // CSGBase 3: deep copy of base2, used in following error check
+  auto base3 = base2->clone();
+
+  // Joining: without setting ignore_identical_components to true, an error should occur because the
+  // surface name already exists
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base3]()
+                                   { base1->joinOtherBase(std::move(base3), false); },
+                                   "Surface with name s1 already exists in geometry.");
+  }
+
+  // CSGBase 4: deep copy of base2, but s1 has a transformation applied and is no longer identical
+  // to original s1
+  auto base4 = base2->clone();
+  auto & surf = base4->getSurfaceByName("s1");
+  base4->addTransformation(surf, TransformationType::SCALE, std::make_tuple(10, 10, 10));
+  // Joining: with ignore_identical_components set to true, an error still occurs because the
+  // two surfaces are not identical (different transformations) even though they have the same name
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base4]()
+                                   { base1->joinOtherBase(std::move(base4), true); },
+                                   "cannot be discarded as it is not an identical surface.");
+  }
+
+  // Joining: by setting ignore_identical_components to true, base1 and base2
+  // can be combined properly
+  base1->joinOtherBase(std::move(base2), true);
+
+  // We now rename the s1 surface. Both regions of c1 and c2 should point to
+  // the renamed surface
+  base1->renameSurface(surf1, "s1_rename");
+  auto c1 = base1->getCellByName("c1");
+  std::vector<std::string> expected_c1_region{"s1_rename", "+"};
+  ASSERT_EQ(expected_c1_region, c1.getRegion().toPostfixStringList());
+  auto c2 = base1->getCellByName("c2");
+  std::vector<std::string> expected_c2_region{"s1_rename", "-"};
+  ASSERT_EQ(expected_c2_region, c2.getRegion().toPostfixStringList());
+
+  // Check that there is only one surface defined in base1
+  ASSERT_EQ(base1->getAllSurfaces().size(), 1);
+}
+
+/// test CSGBase::joinOtherBase with identical cells that have a universe fill
+TEST(CSGBaseTest, joinOtherBaseIgnoreIdenticalCellsUniverseFill)
+{
+  // Create two CSGBase objects to join together into a single root
+  // Both of these CSGBase objects will contain the identical cell based on its member data
+  // Upon joining these CSGBases, the identical cell will be discarded and not inserted
+  // into the combined CSGBase object
+
+  // CSGBase 1: one cell with a universe fill, added to another universe
+  std::unique_ptr<CSGBase> base1 = std::make_unique<CSG::CSGBase>();
+  auto & add_to_univ1 = base1->createUniverse("add_to_univ1");
+  auto & fill_univ1 = base1->createUniverse("fill_univ");
+  CSGRegion empty_region;
+  auto c1 = base1->createCell("c1", fill_univ1, empty_region, &add_to_univ1);
+
+  // CSGBase 2: clone of CSGBase 1 but cell belongs to a renamed universe
+  std::unique_ptr<CSGBase> base2 = base1->clone();
+  auto & add_to_univ2 = base2->getUniverseByName("add_to_univ1");
+  base2->renameUniverse(add_to_univ2, "add_to_univ2");
+
+  // CSGBase 3: deep copy of base2, used in following error check.
+  auto base3 = base2->clone();
+
+  // Joining: without setting ignore_identical_components to true, an error should occur because the
+  // cell name already exists
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base3]()
+                                   { base1->joinOtherBase(std::move(base3), false); },
+                                   "Cell with name c1 already exists in geometry.");
+  }
+
+  // CSGBase 4: deep copy of base2, but c1 has a transformation applied and is no longer identical
+  // to original c1
+  auto base4 = base2->clone();
+  auto & cell = base4->getCellByName("c1");
+  base4->addTransformation(cell, TransformationType::SCALE, std::make_tuple(10, 10, 10));
+  // Joining: with ignore_identical_components set to true, an error still occurs because the
+  // two cells are not identical (different transformations) even though they have the same name
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base4]()
+                                   { base1->joinOtherBase(std::move(base4), true); },
+                                   "cannot be discarded as it is not an identical cell.");
+  }
+
+  // Joining: by setting ignore_identical_components to true, base1 and base2
+  // can be combined properly
+  base1->joinOtherBase(std::move(base2), true);
+
+  // We now rename the c1 cell. Both cells of add_to_univ1 and add_to_univ2 should point to
+  // the renamed cell
+  auto & c1_rename = base1->getCellByName("c1");
+  base1->renameCell(c1_rename, "c1_rename");
+
+  auto u1 = base1->getUniverseByName("add_to_univ1");
+  ASSERT_TRUE(u1.hasCell("c1_rename"));
+  ASSERT_FALSE(u1.hasCell("c1"));
+
+  auto u2 = base1->getUniverseByName("add_to_univ2");
+  ASSERT_TRUE(u2.hasCell("c1_rename"));
+  ASSERT_FALSE(u2.hasCell("c1"));
+
+  // Check that there is only one cell defined in base1
+  ASSERT_EQ(base1->getAllCells().size(), 1);
+  // Check that there are four universes defined in base1 (root universe, fill universe, and two
+  // universes that contain c1)
+  ASSERT_EQ(base1->getAllUniverses().size(), 4);
+}
+
+/// test CSGBase::joinOtherBase with identical cells that have a lattice fill
+TEST(CSGBaseTest, joinOtherBaseIgnoreIdenticalCellsLatticeFill)
+{
+  // Create two CSGBase objects to join together into a single root
+  // Both of these CSGBase objects will contain the identical cell based on its member data
+  // Upon joining these CSGBases, the identical cell will be discarded and not inserted
+  // into the combined CSGBase object
+
+  // CSGBase 1: one cell with a lattice fill, added to another universe
+  std::unique_ptr<CSGBase> base1 = std::make_unique<CSG::CSGBase>();
+  auto & add_to_univ1 = base1->createUniverse("add_to_univ1");
+  auto & lat_univ = base1->createUniverse("lat_univ");
+  std::vector<std::vector<std::reference_wrapper<const CSGUniverse>>> univs = {{lat_univ}};
+  std::unique_ptr<CSGCartesianLattice> lat_ptr =
+      std::make_unique<CSGCartesianLattice>("lat", 1.0, univs);
+  const auto & fill_lat = base1->addLattice(std::move(lat_ptr));
+  const auto & outer_univ = base1->createUniverse("outer_univ");
+  base1->setLatticeOuter(fill_lat, outer_univ);
+  CSGRegion empty_region;
+  auto c1 = base1->createCell("c1", fill_lat, empty_region, &add_to_univ1);
+
+  // CSGBase 2: clone of CSGBase 1 but cell belongs to a renamed universe
+  std::unique_ptr<CSGBase> base2 = base1->clone();
+  auto & add_to_univ2 = base2->getUniverseByName("add_to_univ1");
+  base2->renameUniverse(add_to_univ2, "add_to_univ2");
+
+  // CSGBase 3: deep copy of base2, used in following error check
+  auto base3 = base2->clone();
+
+  // Joining: without setting ignore_identical_components to true, an error should occur because the
+  // cell name already exists
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base3]()
+                                   { base1->joinOtherBase(std::move(base3), false); },
+                                   "Cell with name c1 already exists in geometry.");
+  }
+
+  // CSGBase 4: deep copy of base2, but lattice universe is renamed and is no longer identical to
+  // original lattice
+  auto base4 = base2->clone();
+  auto & lat_univ_rename = base4->getUniverseByName("lat_univ");
+  base4->renameUniverse(lat_univ_rename, "lat_univ_rename");
+  // Joining: with ignore_identical_components set to true, an error still occurs because the
+  // two fill lattices' elements do not contain the same universe even though they have the same
+  // name
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base4]()
+                                   { base1->joinOtherBase(std::move(base4), true); },
+                                   "cannot be discarded as it is not an identical lattice.");
+  }
+
+  // CSGBase 5: deep copy of base2, but lattice outer is renamed and is no longer identical to
+  // original lattice's outer
+  auto base5 = base2->clone();
+  auto & outer_univ_rename = base5->getUniverseByName("outer_univ");
+  base5->renameUniverse(outer_univ_rename, "outer_univ_rename");
+  // Joining: with ignore_identical_components set to true, an error still occurs because the
+  // two fill lattices do not have the same outer universe even though they have the same name
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base5]()
+                                   { base1->joinOtherBase(std::move(base5), true); },
+                                   "cannot be discarded as it is not an identical lattice.");
+  }
+
+  // Joining: by setting ignore_identical_components to true, base1 and base2
+  // can be combined properly
+  base1->joinOtherBase(std::move(base2), true);
+
+  // We now rename the c1 cell. Both cells of add_to_univ1 and add_to_univ2 should point to
+  // the renamed cell
+  auto & c1_rename = base1->getCellByName("c1");
+  base1->renameCell(c1_rename, "c1_rename");
+
+  auto u1 = base1->getUniverseByName("add_to_univ1");
+  ASSERT_TRUE(u1.hasCell("c1_rename"));
+  ASSERT_FALSE(u1.hasCell("c1"));
+
+  auto u2 = base1->getUniverseByName("add_to_univ2");
+  ASSERT_TRUE(u2.hasCell("c1_rename"));
+  ASSERT_FALSE(u2.hasCell("c1"));
+
+  // Check that there is only one cell defined in base1
+  ASSERT_EQ(base1->getAllCells().size(), 1);
+  // Check that there are five universes defined in base1 (root universe, two universes that contain
+  // c1, and two universes that define the lattice)
+  ASSERT_EQ(base1->getAllUniverses().size(), 5);
+  // Check that there is only one lattice defined in base1 (fill lattice of cell)
+  ASSERT_EQ(base1->getAllLattices().size(), 1);
+}
+
+/// test CSGBase::joinOtherBase with identical universes
+TEST(CSGBaseTest, joinOtherBaseIgnoreIdenticalUniverses)
+{
+  // Create two CSGBase objects to join together into a single root
+  // Both of these CSGBase objects will contain the identical universe based on its member data
+  // Upon joining these CSGBases, the identical universe will be discarded and not inserted
+  // into the combined CSGBase object
+
+  // CSGBase 1: one cell with a universe fill that contains a material cell
+  std::unique_ptr<CSGBase> base1 = std::make_unique<CSG::CSGBase>();
+  auto & fill_univ = base1->createUniverse("fill_univ");
+  CSGRegion empty_region;
+  auto c1 = base1->createCell("c1", fill_univ, empty_region);
+
+  // CSGBase 2: clone of CSGBase 1 but cell with universe fill is renamed
+  std::unique_ptr<CSGBase> base2 = base1->clone();
+  auto & c1_rename = base2->getCellByName("c1");
+  base2->renameCell(c1_rename, "c1_rename");
+
+  // CSGBase 3: deep copy of base2, used in following error check. Clone of base1 is
+  // also created as it gets modified by the error check
+  auto base3 = base2->clone();
+  auto base1_copy = base1->clone();
+
+  // Joining: without setting ignore_identical_components to true, an error should occur because the
+  // universe name already exits
+  {
+    Moose::UnitUtils::assertThrows([&base1_copy, &base3]()
+                                   { base1_copy->joinOtherBase(std::move(base3), false); },
+                                   "Universe with name fill_univ already exists in geometry.");
+  }
+
+  // CSGBase 4: deep copy of base2, but fill_univ has a transformation applied and is no longer
+  // identical to original fill_univ
+  auto base4 = base2->clone();
+  auto & fill_univ_transform = base4->getUniverseByName("fill_univ");
+  base4->addTransformation(
+      fill_univ_transform, TransformationType::SCALE, std::make_tuple(10, 10, 10));
+  // Joining: with ignore_identical_components set to true, an error still occurs because the
+  // two universes are not identical even though they have the same name
+  {
+    Moose::UnitUtils::assertThrows([&base1, &base4]()
+                                   { base1->joinOtherBase(std::move(base4), true); },
+                                   "cannot be discarded as it is not an identical universe.");
+  }
+
+  // Joining: by setting ignore_identical_components to true, base1 and base2
+  // can be combined properly
+  base1->joinOtherBase(std::move(base2), true);
+
+  // We now rename the fill_univ universe. Both fills of of c1 and c1_rename should point to
+  // the renamed universe
+  auto & fill_univ_rename = base1->getUniverseByName("fill_univ");
+  base1->renameUniverse(fill_univ_rename, "fill_univ_rename");
+
+  auto & c1_join = base1->getCellByName("c1");
+  ASSERT_EQ(c1_join.getFillName(), "fill_univ_rename");
+
+  auto & c1_rename_join = base1->getCellByName("c1_rename");
+  ASSERT_EQ(c1_rename_join.getFillName(), "fill_univ_rename");
+
+  // Check that there are two cells defined in base1
+  ASSERT_EQ(base1->getAllCells().size(), 2);
+  // Check that there are two universes defined in base1 (root universe and fill universe)
+  ASSERT_EQ(base1->getAllUniverses().size(), 2);
 }
 
 /// test CSGBase::checkUniverseLinking / getLinkedUniverses
@@ -1455,6 +1746,20 @@ TEST(CSGBaseTest, testUniverseLinking)
   // fill a new cell with the lattice, linking it to root, confirm no warning is raised when checked
   // linking tree: ROOT_UNIVERSE -> c2 -> lat1 -> univ2 + univ_out
   csg_obj->createCell("c2", lat, +s1);
+  ASSERT_NO_THROW(csg_obj->checkUniverseLinking());
+
+  // create cell that is added to root universe
+  CSGRegion empty_region;
+  auto & cell1 = csg_obj->createCell("cell1", empty_region);
+  // remove cell from root universe so that it is orphaned
+  csg_obj->removeCellFromUniverse(csg_obj->getRootUniverse(), cell1);
+
+  // since this cell is orphaned, a warning should be raised
+  Moose::UnitUtils::assertThrows([&csg_obj]() { csg_obj->checkUniverseLinking(); },
+                                 "Cell with name cell1 is not linked to root universe.");
+
+  // link this cell to another universe, now the cell should no longer be orphaned
+  csg_obj->addCellToUniverse(univ1, cell1);
   ASSERT_NO_THROW(csg_obj->checkUniverseLinking());
 }
 

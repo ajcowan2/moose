@@ -24,6 +24,7 @@ KernelBase::validParams()
   auto params = ResidualObject::validParams();
   params += BlockRestrictable::validParams();
   params += MaterialPropertyInterface::validParams();
+  params += LocalParallelInterface::validParams();
 
   // Kernels always couple within their element
   params.addRelationshipManager("ElementSideNeighborLayers",
@@ -40,7 +41,8 @@ KernelBase::KernelBase(const InputParameters & parameters, Moose::VarFieldType f
   : ResidualObject(parameters, field_type),
     BlockRestrictable(this),
     CoupleableMooseVariableDependencyIntermediateInterface(this, false),
-    MaterialPropertyInterface(this, blockIDs(), Moose::EMPTY_BOUNDARY_IDS)
+    MaterialPropertyInterface(this, blockIDs(), Moose::EMPTY_BOUNDARY_IDS),
+    LocalParallelInterface(this)
 {
 }
 
@@ -48,7 +50,8 @@ KernelBase::KernelBase(const KernelBase & object)
   : ResidualObject(object),
     BlockRestrictable(object, {}),
     CoupleableMooseVariableDependencyIntermediateInterface(object, {}),
-    MaterialPropertyInterface(object, {})
+    MaterialPropertyInterface(object, {}),
+    LocalParallelInterface(object)
 {
 }
 

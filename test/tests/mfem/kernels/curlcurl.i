@@ -4,7 +4,6 @@
 [Mesh]
   type = MFEMMesh
   file = ../mesh/small_fichera.mesh
-  dim = 3
 []
 
 [Problem]
@@ -118,12 +117,23 @@
     type = MFEMHypreAMS
     fespace = HCurlFESpace
   []
+  [matrix_free_ams]
+    type = MFEMMatrixFreeAMS
+  []
 []
 
-[Solver]
-  type = MFEMHypreGMRES
-  preconditioner = ams
-  l_tol = 1e-12
+[Solvers]
+  active = gmres
+  [gmres]
+    type = MFEMHypreGMRES
+    preconditioner = ams
+    l_tol = 1e-12
+  []
+  [cg]
+    type = MFEMCGSolver
+    preconditioner = matrix_free_ams
+    l_tol = 1e-12
+  []
 []
 
 [Executioner]

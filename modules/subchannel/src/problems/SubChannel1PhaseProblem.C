@@ -19,6 +19,9 @@
 #include "SinglePhaseFluidProperties.h"
 #include "SCMFrictionClosureBase.h"
 #include "SCMHTCClosureBase.h"
+#include "SCMMixingClosureBase.h"
+#include "TransientBase.h"
+#include "ImplicitEuler.h"
 
 struct Ctx
 {
@@ -67,7 +70,6 @@ SubChannel1PhaseProblem::validParams()
   params += PostprocessorInterface::validParams();
   params.addClassDescription("Base class of the subchannel solvers");
   params.addRequiredParam<unsigned int>("n_blocks", "The number of blocks in the axial direction");
-  params.addRequiredParam<Real>("CT", "Turbulent modeling parameter");
   params.addParam<Real>("P_tol", 1e-6, "Pressure tolerance");
   params.addParam<Real>("T_tol", 1e-6, "Temperature tolerance");
   params.addParam<int>("T_maxit", 100, "Maximum number of iterations for inner temperature loop");
@@ -90,10 +92,6 @@ SubChannel1PhaseProblem::validParams()
       "segregated", true, "Boolean to define whether to use a segregated solution.");
   params.addParam<bool>(
       "verbose_subchannel", false, "Boolean to print out information related to subchannel solve.");
-  params.addParam<bool>(
-      "deformation",
-      false,
-      "Boolean that activates the deformation effect based on values for: displacement, Dpin");
   params.addRequiredParam<bool>("compute_density", "Flag that enables the calculation of density");
   params.addRequiredParam<bool>("compute_viscosity",
                                 "Flag that enables the calculation of viscosity");
@@ -101,15 +99,41 @@ SubChannel1PhaseProblem::validParams()
       "compute_power",
       "Flag that informs whether we solve the Enthalpy/Temperature equations or not");
   params.addRequiredParam<PostprocessorName>(
-      "P_out", "The postprocessor (or scalar) that provides the value of outlet pressure [Pa]");
+      "P_out",
+      "The postprocessor (or scalar) that provides the absolute outlet pressure [Pa]. The solved "
+      "pressure variable P is relative to this value.");
   params.addRequiredParam<UserObjectName>("fp", "Fluid properties user object name");
   params.addRequiredParam<UserObjectName>("friction_closure",
                                           "Closure computing the friction factor");
-  // Make these OPTIONAL here; enforce them conditionally
+  params.addRequiredParam<UserObjectName>(
+      "mixing_closure",
+      "Closure computing the turbulent mixing, wire-induced "
+      "mixing and sweep flow mixing parameter where applicable");
   params.addParam<UserObjectName>(
       "pin_HTC_closure", "Closure computing HTC on fuel pin (required if pin mesh exists).");
   params.addParam<UserObjectName>("duct_HTC_closure",
                                   "Closure computing HTC on duct (required if duct mesh exists).");
+  params.addParam<bool>(
+      "full_output", false, "Flag that enables the output of the maximum number of variables.");
+  params.addDeprecatedParam<Real>("beta",
+                                  "Thermal diffusion coefficient used in turbulent crossflow.",
+                                  "Use closure system instead.");
+  params.addDeprecatedParam<bool>(
+      "constant_beta",
+      true,
+      "Boolean to define the use of a constant beta or beta correlation (Kim and Chung, 2001)",
+      "Use closure system instead.");
+
+  params.addParamNamesToGroup("P_tol T_tol T_maxit rtol atol dtol maxit",
+                              "Solver tolerances and iterations");
+  params.addParamNamesToGroup("implicit segregated staggered_pressure interpolation_scheme",
+                              "Solution method");
+  params.addParamNamesToGroup("fp friction_closure mixing_closure pin_HTC_closure duct_HTC_closure",
+                              "Closures");
+  params.addParamNamesToGroup("compute_density compute_viscosity compute_power gravity",
+                              "Physics models");
+  params.addParamNamesToGroup("verbose_subchannel full_output", "Output");
+
   return params;
 }
 
@@ -119,6 +143,8 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
     _friction_args(/*i_ch=*/0, /*Re=*/1.0, /*S=*/0.0, /*w_perim=*/0.0),
     _nusselt_args(
         /*Re=*/1.0, /*Pr=*/1.0, std::numeric_limits<unsigned int>::max(), /*iz=*/0, /*i_ch=*/0),
+    _P_out(getPostprocessorValue("P_out")),
+    _fp(nullptr),
     _subchannel_mesh(SCM::getMesh<SubChannelMesh>(_mesh)),
     _n_blocks(getParam<unsigned int>("n_blocks")),
     _Wij(declareRestartableData<libMesh::DenseMatrix<Real>>("Wij")),
@@ -130,8 +156,6 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
     _compute_power(getParam<bool>("compute_power")),
     _pin_mesh_exist(_subchannel_mesh.pinMeshExist()),
     _duct_mesh_exist(_subchannel_mesh.ductMeshExist()),
-    _P_out(getPostprocessorValue("P_out")),
-    _CT(getParam<Real>("CT")),
     _P_tol(getParam<Real>("P_tol")),
     _T_tol(getParam<Real>("T_tol")),
     _T_maxit(getParam<int>("T_maxit")),
@@ -146,12 +170,14 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
     _staggered_pressure_bool(getParam<bool>("staggered_pressure")),
     _segregated_bool(getParam<bool>("segregated")),
     _verbose_subchannel(getParam<bool>("verbose_subchannel")),
-    _deformation(getParam<bool>("deformation")),
-    _fp(nullptr),
     _Tpin_soln(nullptr),
     _duct_heat_flux_soln(nullptr),
-    _Tduct_soln(nullptr)
+    _Tduct_soln(nullptr),
+    _HTC_soln(nullptr)
 {
+  if (params.isParamSetByUser("beta") || params.isParamSetByUser("constant_beta"))
+    paramError("beta",
+               "You are using a deprecated parameter. Please use the mixing_closure system.");
   if (_pin_mesh_exist && !isParamValid("pin_HTC_closure"))
     paramError("pin_HTC_closure", "required when a pin mesh exists.");
   if (_duct_mesh_exist && !isParamValid("duct_HTC_closure"))
@@ -164,6 +190,9 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
   // NOTE: The four quantities above are 0 for processor_id != 0
   _z_grid = _subchannel_mesh.getZGrid();
   _block_size = _n_cells / _n_blocks;
+  // Pressure drop (lives on subchannel nodes)
+  _DP.resize(_n_channels, _n_cells + 1);
+  _DP.zero();
   // Turbulent crossflow (stuff that live on the gaps)
   if (!_app.isRestarting() && !_app.isRecovering())
   {
@@ -260,18 +289,29 @@ SubChannel1PhaseProblem::initialSetup()
   _fp = &getUserObject<SinglePhaseFluidProperties>(getParam<UserObjectName>("fp"));
   _friction_closure =
       &getUserObject<SCMFrictionClosureBase>(getParam<UserObjectName>("friction_closure"));
+  _mixing_closure =
+      &getUserObject<SCMMixingClosureBase>(getParam<UserObjectName>("mixing_closure"));
+
+  /// Set value for turbulent momentum modeling parameter CT
+  _CT = _mixing_closure->getCT();
 
   // Create variables for output and storage
   _mdot_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::MASS_FLOW_RATE));
   _SumWij_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::SUM_CROSSFLOW));
   _P_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::PRESSURE));
-  _DP_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::PRESSURE_DROP));
+  if (getParam<bool>("full_output"))
+  {
+    _DP_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::PRESSURE_DROP));
+    _ff_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::FRICTION_FACTOR));
+  }
   _h_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::ENTHALPY));
   _T_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::TEMPERATURE));
   if (_pin_mesh_exist)
   {
     _Tpin_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::PIN_TEMPERATURE));
     _Dpin_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::PIN_DIAMETER));
+    _HTC_soln =
+        std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::HEAT_TRANSFER_COEFFICIENT));
     _pin_HTC_closure =
         &getUserObject<SCMHTCClosureBase>(getParam<UserObjectName>("pin_HTC_closure"));
   }
@@ -282,7 +322,6 @@ SubChannel1PhaseProblem::initialSetup()
   _q_prime_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::LINEAR_HEAT_RATE));
   _displacement_soln =
       std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::DISPLACEMENT));
-  _ff_soln = std::make_unique<SolutionHandle>(getVariable(0, SubChannelApp::FRICTION_FACTOR));
   if (_duct_mesh_exist)
   {
     _duct_heat_flux_soln =
@@ -291,6 +330,40 @@ SubChannel1PhaseProblem::initialSetup()
     _duct_HTC_closure =
         &getUserObject<SCMHTCClosureBase>(getParam<UserObjectName>("duct_HTC_closure"));
   }
+}
+
+void
+SubChannel1PhaseProblem::detectDeformation()
+{
+  const Real tol = libMesh::TOLERANCE;
+  const auto pin_diameter = _subchannel_mesh.getPinDiameter();
+
+  if (_pin_mesh_exist)
+  {
+    for (unsigned int iz = 0; iz < _n_cells + 1; iz++)
+      for (unsigned int i_pin = 0; i_pin < _n_pins; i_pin++)
+      {
+        auto * node = _subchannel_mesh.getPinNode(i_pin, iz);
+        const Real Dpin = (*_Dpin_soln)(node);
+        if (std::abs(Dpin) <= tol)
+          mooseError("Dpin is zero at node ",
+                     node->id(),
+                     ". You must initialize Dpin to a non-zero value.");
+        if (std::abs(Dpin - pin_diameter) > tol)
+          _deformation = true;
+      }
+  }
+
+  for (unsigned int iz = 0; iz < _n_cells + 1 && !_deformation; iz++)
+    for (unsigned int i_ch = 0; i_ch < _n_channels && !_deformation; i_ch++)
+    {
+      auto * node = _subchannel_mesh.getChannelNode(i_ch, iz);
+      auto subch_type = _subchannel_mesh.getSubchannelType(i_ch);
+
+      if ((subch_type == EChannelType::CORNER || subch_type == EChannelType::EDGE) &&
+          std::abs((*_displacement_soln)(node)) > tol)
+        _deformation = true;
+    }
 }
 
 SubChannel1PhaseProblem::~SubChannel1PhaseProblem()
@@ -662,7 +735,8 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         auto Re = (((*_mdot_soln)(node_in) / S) * Dh_i / mu_in);
         _friction_args = FrictionStruct(i_ch, Re, S, w_perim);
         Real ff = _friction_closure->computeFrictionFactor(_friction_args);
-        _ff_soln->set(node_out, ff);
+        if (_ff_soln)
+          _ff_soln->set(node_out, ff);
         /// Upwind local form loss
         auto ki = 0.0;
         if ((*_mdot_soln)(node_out) >= 0)
@@ -675,7 +749,9 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         auto gravity_term = _dir_grav * _g_grav * (*_rho_soln)(node_out)*dz * S;
         auto DP = (1 / S) * (time_term + mass_term1 + mass_term2 + crossflow_term + turbulent_term +
                              friction_term + gravity_term); // Pa
-        _DP_soln->set(node_out, DP);
+        _DP(i_ch, iz) = DP;
+        if (_DP_soln)
+          _DP_soln->set(node_out, DP);
       }
     }
   }
@@ -724,7 +800,8 @@ SubChannel1PhaseProblem::computeDP(int iblock)
           auto Re = ((mdot_loc / S_interp) * Dh_i / mu_interp);
           _friction_args = FrictionStruct(i_ch, Re, S_interp, w_perim_interp);
           Real ff = _friction_closure->computeFrictionFactor(_friction_args);
-          _ff_soln->set(node_out, ff);
+          if (_ff_soln)
+            _ff_soln->set(node_out, ff);
           /// Upwind local form loss
           auto ki = 0.0;
           if ((*_mdot_soln)(node_out) >= 0)
@@ -960,7 +1037,8 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         auto Re = ((mdot_interp / S_interp) * Dh_i / mu_interp);
         _friction_args = FrictionStruct(i_ch, Re, S_interp, w_perim_interp);
         Real ff = _friction_closure->computeFrictionFactor(_friction_args);
-        _ff_soln->set(node_out, ff);
+        if (_ff_soln)
+          _ff_soln->set(node_out, ff);
         /// Upwind local form loss
         auto ki = 0.0;
         if ((*_mdot_soln)(node_out) >= 0)
@@ -1080,12 +1158,16 @@ SubChannel1PhaseProblem::computeDP(int iblock)
           if (S_interp != 0)
           {
             auto DP = (1 / S_interp) * xx[iz_ind * _n_channels + i_ch];
-            _DP_soln->set(node_out, DP);
+            _DP(i_ch, iz) = DP;
+            if (_DP_soln)
+              _DP_soln->set(node_out, DP);
           }
           else
           {
             auto DP = 0.0;
-            _DP_soln->set(node_out, DP);
+            _DP(i_ch, iz) = DP;
+            if (_DP_soln)
+              _DP_soln->set(node_out, DP);
           }
         }
       }
@@ -1111,7 +1193,7 @@ SubChannel1PhaseProblem::computeP(int iblock)
           auto * node_out = _subchannel_mesh.getChannelNode(i_ch, iz);
           auto * node_in = _subchannel_mesh.getChannelNode(i_ch, iz - 1);
           // update Pressure solution
-          _P_soln->set(node_in, (*_P_soln)(node_out) + (*_DP_soln)(node_out));
+          _P_soln->set(node_in, (*_P_soln)(node_out) + _DP(i_ch, iz));
         }
       }
     }
@@ -1132,13 +1214,13 @@ SubChannel1PhaseProblem::computeP(int iblock)
           auto alpha = computeInterpolationCoefficients(Pe);
           if (iz == last_node)
           {
-            _P_soln->set(node_in, (*_P_soln)(node_out) + (*_DP_soln)(node_out) / 2.0);
+            _P_soln->set(node_in, (*_P_soln)(node_out) + _DP(i_ch, iz) / 2.0);
           }
           else
           {
             _P_soln->set(node_in,
-                         (*_P_soln)(node_out) + (1.0 - alpha) * (*_DP_soln)(node_out) +
-                             alpha * (*_DP_soln)(node_in));
+                         (*_P_soln)(node_out) + (1.0 - alpha) * _DP(i_ch, iz) +
+                             alpha * _DP(i_ch, iz - 1));
           }
         }
       }
@@ -1187,7 +1269,7 @@ SubChannel1PhaseProblem::computeP(int iblock)
 
           if (_segregated_bool)
           {
-            auto dp_out = (*_DP_soln)(node_out);
+            auto dp_out = _DP(i_ch, iz);
             PetscScalar value_v = -1.0 * dp_out * S_interp;
             PetscInt row_v = i_ch + _n_channels * iz_ind;
             LibmeshPetscCall(
@@ -1259,7 +1341,7 @@ SubChannel1PhaseProblem::computeP(int iblock)
             PetscInt row = i_ch + _n_channels * iz_ind;
             LibmeshPetscCall(VecSetValues(_amc_pressure_force_rhs, 1, &row, &value, ADD_VALUES));
 
-            auto dp_out = (*_DP_soln)(node_out);
+            auto dp_out = _DP(i_ch, iz);
             PetscScalar value_v = -1.0 * dp_out / 2.0 * S_interp;
             PetscInt row_v = i_ch + _n_channels * iz_ind;
             LibmeshPetscCall(
@@ -1275,8 +1357,8 @@ SubChannel1PhaseProblem::computeP(int iblock)
 
             if (_segregated_bool)
             {
-              auto dp_in = (*_DP_soln)(node_in);
-              auto dp_out = (*_DP_soln)(node_out);
+              auto dp_in = _DP(i_ch, iz - 1);
+              auto dp_out = _DP(i_ch, iz);
               auto dp_interp = computeInterpolatedValue(dp_out, dp_in, 0.5);
               PetscScalar value_v = -1.0 * dp_interp * S_interp;
               PetscInt row_v = i_ch + _n_channels * iz_ind;
@@ -1733,7 +1815,7 @@ SubChannel1PhaseProblem::computeWijPrime(int iblock)
       auto avg_massflux =
           0.5 * (((*_mdot_soln)(node_in_i) + (*_mdot_soln)(node_in_j)) / (Si_in + Sj_in) +
                  ((*_mdot_soln)(node_out_i) + (*_mdot_soln)(node_out_j)) / (Si_out + Sj_out));
-      auto beta = computeBeta(i_gap, iz, /*enthalpy=*/false);
+      auto beta = computeMixingParameter(i_gap, iz);
 
       if (!_implicit_bool)
       {
@@ -1801,6 +1883,40 @@ SubChannel1PhaseProblem::computeWijPrime(int iblock)
     LibmeshPetscCall(VecDestroy(&loc_prod));
     LibmeshPetscCall(VecDestroy(&loc_Wij));
   }
+}
+
+Real
+SubChannel1PhaseProblem::computeMixingParameter(unsigned int i_gap, unsigned int iz) const
+{
+  auto beta = _mixing_closure->computeMixingParameter(i_gap, iz);
+  if (!std::isfinite(beta) || beta < 0.0)
+    mooseError(name(),
+               ": Mixing closure returned invalid beta = ",
+               beta,
+               " for gap ",
+               i_gap,
+               " at axial index ",
+               iz,
+               ". Beta must be finite and non-negative.");
+
+  return beta;
+}
+
+Real
+SubChannel1PhaseProblem::computeSweepFlowMixingParameter(unsigned int i_gap, unsigned int iz) const
+{
+  auto beta = _mixing_closure->computeSweepFlowMixingParameter(i_gap, iz);
+  if (!std::isfinite(beta) || beta < 0.0)
+    mooseError(name(),
+               ": Mixing closure returned invalid sweep-flow coefficient = ",
+               beta,
+               " for gap ",
+               i_gap,
+               " at axial index ",
+               iz,
+               ". sweep-flow coefficient must be finite and non-negative.");
+
+  return beta;
 }
 
 libMesh::DenseVector<Real>
@@ -2400,6 +2516,22 @@ SubChannel1PhaseProblem::externalSolve()
   _console << "Executing subchannel solver\n";
   _dt = (isTransient() ? dt() : _one);
   _TR = isTransient();
+
+  // The subchannel solver hardcodes a first-order backward (implicit) Euler time discretization, so
+  // any other time integrator a user selects is silently ignored. Warn once if one is requested.
+  if (!_time_integrator_checked)
+  {
+    _time_integrator_checked = true;
+    if (isTransient())
+      if (auto * transient = dynamic_cast<TransientBase *>(_app.getExecutioner()))
+        for (const auto * ti : transient->getTimeIntegrators())
+          if (!dynamic_cast<const ImplicitEuler *>(ti))
+            mooseWarning("The subchannel solver always uses implicit (backward) Euler time "
+                         "integration; the requested '",
+                         ti->type(),
+                         "' time integrator is ignored.");
+  }
+
   initializeSolution();
   // Small helper functions to reduce repetition
   // Verbose print helper (no-op unless _verbose_subchannel is true)
@@ -2515,9 +2647,41 @@ SubChannel1PhaseProblem::externalSolve()
     _SumWij_soln->set(node_in, (*_SumWij_soln)(node_out)); // kg/sec
   }
 
-  /// Assigning temperature to the fuel pins
   if (_pin_mesh_exist)
   {
+    // Assign average HTC to subchannels. This is exact if all pins have the same diameter
+    for (unsigned int iz = 0; iz < _n_cells + 1; ++iz)
+    {
+      for (unsigned int i_ch = 0; i_ch < _n_channels; i_ch++)
+      {
+        const auto * node = _subchannel_mesh.getChannelNode(i_ch, iz);
+        auto mu = (*_mu_soln)(node);
+        auto S = (*_S_flow_soln)(node);
+        auto w_perim = (*_w_perim_soln)(node);
+        auto Dh_i = 4.0 * S / w_perim;
+        auto Re = (((*_mdot_soln)(node) / S) * Dh_i / mu);
+        auto k = _fp->k_from_p_T((*_P_soln)(node) + _P_out, (*_T_soln)(node));
+        auto cp = _fp->cp_from_p_T((*_P_soln)(node) + _P_out, (*_T_soln)(node));
+        auto Pr = (*_mu_soln)(node)*cp / k;
+        // Create Friction structure
+        _friction_args = FrictionStruct(i_ch, Re, S, w_perim);
+
+        Real sumhw = 0.0;
+        for (auto i_pin : _subchannel_mesh.getChannelPins(i_ch))
+        {
+          // Create nusselt number structure
+          _nusselt_args = NusseltStruct(Re, Pr, i_pin, iz, i_ch);
+
+          // Compute HTC
+          sumhw += _pin_HTC_closure->computeHTC(_friction_args, _nusselt_args, k);
+        }
+
+        // Set HTC
+        _HTC_soln->set(node, sumhw / _subchannel_mesh.getChannelPins(i_ch).size());
+      }
+    }
+    _HTC_soln->close();
+
     _console << "Commencing calculation of Pin surface temperature \n";
     for (unsigned int i_pin = 0; i_pin < _n_pins; i_pin++)
     {
@@ -2525,7 +2689,6 @@ SubChannel1PhaseProblem::externalSolve()
       {
         const auto * pin_node = _subchannel_mesh.getPinNode(i_pin, iz);
         Real sumTemp = 0.0;
-
         // Calculate sum of pin surface temperatures that the channels around the pin see
         for (auto i_ch : _subchannel_mesh.getPinChannels(i_pin))
         {
@@ -2538,16 +2701,12 @@ SubChannel1PhaseProblem::externalSolve()
           auto k = _fp->k_from_p_T((*_P_soln)(node) + _P_out, (*_T_soln)(node));
           auto cp = _fp->cp_from_p_T((*_P_soln)(node) + _P_out, (*_T_soln)(node));
           auto Pr = (*_mu_soln)(node)*cp / k;
-
-          // Create nusselt number structure
-          _nusselt_args = NusseltStruct(Re, Pr, i_pin, iz, i_ch);
-
           // Create Friction structure
           _friction_args = FrictionStruct(i_ch, Re, S, w_perim);
-
+          // Create nusselt number structure
+          _nusselt_args = NusseltStruct(Re, Pr, i_pin, iz, i_ch);
           // Compute HTC
           auto hw = _pin_HTC_closure->computeHTC(_friction_args, _nusselt_args, k);
-
           // Compute surface temperature contribution from subchannel side
           sumTemp +=
               (*_q_prime_soln)(pin_node) / ((*_Dpin_soln)(pin_node)*M_PI * hw) + (*_T_soln)(node);
@@ -2603,33 +2762,33 @@ SubChannel1PhaseProblem::externalSolve()
     return;
   Real power_in = 0.0;
   Real power_out = 0.0;
-  Real Total_surface_area = 0.0;
-  Real Total_wetted_perimeter = 0.0;
+  Real viscosity_in = 0.0;
   Real mass_flow_in = 0.0;
   Real mass_flow_out = 0.0;
   for (unsigned int i_ch = 0; i_ch < _n_channels; i_ch++)
   {
     auto * node_in = _subchannel_mesh.getChannelNode(i_ch, 0);
     auto * node_out = _subchannel_mesh.getChannelNode(i_ch, _n_cells);
-    Total_surface_area += (*_S_flow_soln)(node_in);
-    Total_wetted_perimeter += (*_w_perim_soln)(node_in);
-    power_in += (*_mdot_soln)(node_in) * (*_h_soln)(node_in);
+    const Real mdot_in = (*_mdot_soln)(node_in);
+    power_in += mdot_in * (*_h_soln)(node_in);
     power_out += (*_mdot_soln)(node_out) * (*_h_soln)(node_out);
-    mass_flow_in += (*_mdot_soln)(node_in);
+    viscosity_in += mdot_in * (*_mu_soln)(node_in);
+    mass_flow_in += mdot_in;
     mass_flow_out += (*_mdot_soln)(node_out);
   }
   auto h_bulk_out = power_out / mass_flow_out;
   auto T_bulk_out = _fp->T_from_p_h(_P_out, h_bulk_out);
 
-  Real bulk_Dh = 4.0 * Total_surface_area / Total_wetted_perimeter;
-  Real inlet_mu = (*_mu_soln)(_subchannel_mesh.getChannelNode(0, 0));
-  Real bulk_Re = mass_flow_in * bulk_Dh / (inlet_mu * Total_surface_area);
+  Real bulk_Dh = _subchannel_mesh.getAssemblyHydraulicDiameter();
+  Real inlet_mu = viscosity_in / mass_flow_in;
+  Real bulk_Re = mass_flow_in * bulk_Dh / (inlet_mu * _subchannel_mesh.getAssemblyFlowArea());
   if (_verbose_subchannel)
   {
     _console << " ======================================= " << std::endl;
     _console << " ======== Subchannel Print Outs ======== " << std::endl;
     _console << " ======================================= " << std::endl;
-    _console << "Total flow area :" << Total_surface_area << " m^2" << std::endl;
+    _console << "Total flow area :" << _subchannel_mesh.getAssemblyFlowArea() << " m^2"
+             << std::endl;
     _console << "Assembly hydraulic diameter :" << bulk_Dh << " m" << std::endl;
     _console << "Assembly Re number :" << bulk_Re << " [-]" << std::endl;
     _console << "Bulk coolant temperature at outlet :" << T_bulk_out << " K" << std::endl;

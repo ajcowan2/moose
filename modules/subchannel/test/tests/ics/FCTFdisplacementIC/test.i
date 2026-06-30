@@ -6,7 +6,7 @@
 ###################################################
 # This input file tests the ICs kernel that populates discplament for the FCTF deformed assembly.
 ###################################################
-# Steady state subchannel calculation
+# Steady state sub_channel calculation
 # Thermal-hydraulics parameters
 ###################################################
 T_in = 305.68 #Kelvin (32.53 C)
@@ -32,7 +32,7 @@ unheated_length_exit = 0.855 #m
 
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = ${n_rings}
     n_cells = 10
     flat_to_flat = ${inner_duct_in}
@@ -47,16 +47,6 @@ unheated_length_exit = 0.855 #m
     spacer_k = '0.0'
   []
 
-  [fuel_pins]
-    type = SCMTriPinMeshGenerator
-    input = subchannel
-    nrings = ${n_rings}
-    n_cells = 10
-    unheated_length_entry = ${unheated_length_entry}
-    heated_length = ${heated_length}
-    unheated_length_exit = ${unheated_length_exit}
-    pitch = ${fuel_pin_pitch}
-  []
 []
 
 [Functions]
@@ -221,11 +211,57 @@ unheated_length_exit = 0.855 #m
   []
 []
 
-[Outputs]
-  exodus = true
+[Postprocessors]
+  [center_S]
+    type = SubChannelPointValue
+    variable = S
+    index = 0
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
+  [edge_S]
+    type = SubChannelPointValue
+    variable = S
+    index = 96
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
+  [corner_S]
+    type = SubChannelPointValue
+    variable = S
+    index = 97
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
+  [center_w_perim]
+    type = SubChannelPointValue
+    variable = w_perim
+    index = 0
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
+  [edge_w_perim]
+    type = SubChannelPointValue
+    variable = w_perim
+    index = 96
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
+  [corner_w_perim]
+    type = SubChannelPointValue
+    variable = w_perim
+    index = 97
+    execute_on = 'timestep_end'
+    height = 0.5
+  []
 []
 
 [Executioner]
   type = Steady
+[]
+
+[Outputs]
+  exodus = false
+  csv = true
 []
 

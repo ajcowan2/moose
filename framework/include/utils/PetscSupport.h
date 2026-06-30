@@ -256,6 +256,13 @@ void setSinglePetscOptionIfAppropriate(const MultiMooseEnum & dont_add_these_opt
                                        FEProblemBase * const problem = nullptr);
 
 /**
+ * Register a BibTeX entry with PETSc's citation list so that it is printed (alongside the
+ * run-specific citations from any PETSc solvers/preconditioners used) when the PETSc -citations
+ * option is enabled. The list is printed at PetscFinalize.
+ */
+void registerPetscCitation(const std::string & bibtex);
+
+/**
  * Insert command-line PETSc options into the active PETSc options database.
  *
  * When \p problem is provided, this also reapplies vector and matrix type options that may have
@@ -315,6 +322,13 @@ void dontAddCommonKSPOptions(FEProblemBase & fe_problem);
  * object to be later set unless explicitly specified in input or on the command line.
  */
 void dontAddCommonSNESOptions(FEProblemBase & fe_problem);
+
+/**
+ * Prefixed variant: suppress common SNES options for the system identified by \p prefix
+ * (e.g. "v_sys_"). Adds the prefixed flag/key names to the blocklist so that setSolverOptions
+ * and setConvergedReasonFlags skip them for that system.
+ */
+void dontAddCommonSNESOptions(FEProblemBase & fe_problem, const std::string & prefix);
 
 /**
  * Create a matrix from a binary file. Note that the returned libMesh matrix wrapper will not

@@ -93,7 +93,7 @@ moose_DYLIB := $(FRAMEWORK_DIR)/libmoose-$(METHOD).$(lib_suffix)
 #
 WASP_DIR            ?= $(MOOSE_DIR)/framework/contrib/wasp/install
 ifeq ($(shell uname -s),Darwin)
-	wasp_LIBS         := $(shell find -E $(WASP_DIR)/lib -regex ".*/lib[a-z]+.$(lib_suffix)")
+	wasp_LIBS         := $(shell find -E $(WASP_DIR)/lib -regex ".*/libwasp[a-z]+.$(lib_suffix)")
 else
 	wasp_LIBS         := $(wildcard $(WASP_DIR)/lib/libwasp*$(lib_suffix))
 endif
@@ -138,13 +138,7 @@ ifeq ($(ENABLE_LIBTORCH),true)
 		libmesh_CPPFLAGS += -isystem $(LIBTORCH_DIR)/include/c10
 
     # Dynamically linking with the available pytorch library
-		ifeq ($(shell uname -s),Darwin)
-			libmesh_LDFLAGS += -Wl,-rpath,$(LIBTORCH_DIR)/lib
-		else
-		  libmesh_LDFLAGS += -Wl,--copy-dt-needed-entries,-rpath,$(LIBTORCH_DIR)/lib
-		endif
-
-    libmesh_LDFLAGS += -L$(LIBTORCH_DIR)/lib -ltorch
+    libmesh_LDFLAGS += -Wl,-rpath,$(LIBTORCH_DIR)/lib -L$(LIBTORCH_DIR)/lib -ltorch -ltorch_cpu -lc10
 
   else
 		# No libtorch library found
@@ -172,13 +166,7 @@ ifeq ($(ENABLE_MFEM),true)
     libmesh_CPPFLAGS += $(MFEM_INCFLAGS) -DMFEM_CONFIG_FILE=\"_config-$(METHOD).hpp\"
 
     # Dynamically linking with the available MFEM library
-    ifeq ($(shell uname -s),Darwin)
-      libmesh_LDFLAGS += -Wl,-rpath,$(MFEM_DIR)/lib
-    else
-      libmesh_LDFLAGS += -Wl,--copy-dt-needed-entries,-rpath,$(MFEM_DIR)/lib
-    endif
-
-    libmesh_LDFLAGS += -L$(MFEM_DIR)/lib -lmfem-$(METHOD) -lmfem-common-$(METHOD)
+    libmesh_LDFLAGS += -Wl,-rpath,$(MFEM_DIR)/lib -L$(MFEM_DIR)/lib -lmfem-$(METHOD) -lmfem-common-$(METHOD)
 
   else
     # No mfem library found
@@ -222,6 +210,10 @@ else
 	PYMOD_EXTENSION    := so
 	PYMOD_COMPILEFLAGS := -L$(shell $(pyconfig) --prefix)/lib -Wl,-rpath,$(shell $(pyconfig) --prefix)/lib $(shell $(pyconfig) --includes)
 endif
+
+# Deduplicate rpath flags accumulated from wasp, MFEM, NEML2, etc. to suppress
+# duplicate -rpath linker warnings on macOS when dependencies share an install prefix.
+libmesh_LDFLAGS := $(shell printf '%s\n' $(libmesh_LDFLAGS) | awk '!seen[$$0]++' | tr '\n' ' ')
 
 $(pyhit_srcfiles) $(hit_CLI_srcfiles): | prebuild
 
@@ -559,13 +551,13 @@ prebuild:: | $(moose_config)
 	@-python3 $(FRAMEWORK_DIR)/../scripts/premake.py
 
 wasp_submodule_status $(moose_revision_header) $(moose_LIB): | prebuild
-moose: wasp_submodule_status $(moose_revision_header) $(moose_LIB) $(pycapabilities_LIB)
+moose: wasp_submodule_status $(moose_revision_header) $(moose_LIB) $(MOOSE_KOKKOS_LIB) $(pycapabilities_LIB)
 
-# Check for support for process substitution, and if supported, we delete a known warning on MacOS from
-# the output because it is printed thousands of times
+# Check for support for process substitution, and if supported, we delete known warnings on MacOS from
+# the output because they are printed many times
 CHECK_PROCESS_SUBSTITUTION := $(shell bash -c 'echo hello > >(cat)')
 ifeq ($(CHECK_PROCESS_SUBSTITUTION),hello)
-  SILENCE_SOME_WARNINGS = 1> >(cat >&1) 2> >(grep -v "could not create compact unwind for" >&2)
+  SILENCE_SOME_WARNINGS = 1> >(cat >&1) 2> >(grep -Ev "could not create compact unwind for|duplicate -rpath|^(ld: warning: )+[[:space:]]*$$|^$$" >&2)
 endif
 
 # [JWP] With libtool, there is only one link command, it should work whether you are creating
@@ -589,14 +581,14 @@ $(hit_LIB): $(hit_objects)
 	@$(libmesh_LIBTOOL) --mode=install --quiet install -c $(hit_LIB) $(HIT_DIR)
 
 ifeq ($(MOOSE_UNITY),true)
-$(moose_LIB): $(moose_objects) $(pcre_LIB) $(gtest_LIB) $(hit_LIB) $(pyhit_LIB) $(moose_revision_header) $(MOOSE_KOKKOS_LIB)
+$(moose_LIB): $(moose_objects) $(pcre_LIB) $(gtest_LIB) $(hit_LIB) $(pyhit_LIB) $(moose_revision_header)
 	@echo "Linking Library "$@"..."
 	@bash -c '$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link --quiet \
 	  $(libmesh_CXX) $(libmesh_CXXFLAGS) -o $@ $(moose_objects) $(pcre_LIB) $(png_LIB) $(LDFLAGS) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS) -rpath $(FRAMEWORK_DIR) ${SILENCE_SOME_WARNINGS}'
 	@$(libmesh_LIBTOOL) --mode=install --quiet install -c $(moose_LIB) $(FRAMEWORK_DIR)
 else
 # We avoid bash -c outside unity build mode because there would be too many arguments and it triggers an error
-$(moose_LIB): $(moose_objects) $(pcre_LIB) $(gtest_LIB) $(hit_LIB) $(pyhit_LIB) $(moose_revision_header) $(MOOSE_KOKKOS_LIB)
+$(moose_LIB): $(moose_objects) $(pcre_LIB) $(gtest_LIB) $(hit_LIB) $(pyhit_LIB) $(moose_revision_header)
 	@echo "Linking Library "$@"..."
 	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link --quiet \
 	  $(libmesh_CXX) $(libmesh_CXXFLAGS) -o $@ $(moose_objects) $(pcre_LIB) $(png_LIB) $(LDFLAGS) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS) -rpath $(FRAMEWORK_DIR)
@@ -753,6 +745,7 @@ clean:
 	@$(libmesh_LIBTOOL) --mode=uninstall --quiet rm -f $(app_LIB) $(app_test_LIB)
 	@rm -rf $(app_EXEC) $(app_objects) $(main_object) $(app_deps) $(app_HEADER) $(app_test_objects) $(app_unity_srcfiles)
 	@rm -rf $(app_KOKKOS_LIB) $(app_KOKKOS_OBJECTS) $(app_KOKKOS_DEPS) $(app_KOKKOS_UNITY_SRC_FILES)
+	@rm -rf $(app_KOKKOS_TEST_LIB) $(app_KOKKOS_TEST_OBJECTS) $(app_KOKKOS_TEST_DEPS)
 	@rm -rf $(APPLICATION_DIR)/build $(pycapabilities_LIB)
 
 # The clobber target does 'make clean' and then uses 'find' to clean a

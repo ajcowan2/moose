@@ -17,6 +17,10 @@
 #include "FaceInfo.h"
 #include "MeshGenerator.h"
 
+// Utilities for MeshBase
+// Many of these utilities could live in libMesh, and in fact, before adding a new one here
+// you should also check mesh_tools.h in libMesh to see if it does not exist there already.
+
 namespace MooseMeshUtils
 {
 
@@ -132,9 +136,25 @@ std::set<subdomain_id_type> getSubdomainIDs(const libMesh::MeshBase & mesh,
 /**
  * Calculates the centroid of a MeshBase.
  * @param mesh input mesh whose centroid needs to be calculated
- * @return a Point data containing the mesh centroid
+ * @return a Point corresponding to the mesh centroid
  */
 Point meshCentroidCalculator(const MeshBase & mesh);
+
+/**
+ * Calculates the centroid of a boundary on a mesh
+ * @param boundary boundary to compute the centroid of
+ * @param mesh input mesh holding the boundary whose centroid needs to be calculated
+ * @return a Point corresponding to the boundary centroid
+ */
+Point boundaryCentroidCalculator(const BoundaryName & boundary, MeshBase & mesh);
+
+/**
+ * Calculates the side-volume weighted (side-vertex) average normal of a boundary on a mesh
+ * @param boundary boundary to compute the weighted normal of
+ * @param mesh input mesh holding the boundary whose averaged normal needs to be calculated
+ * @return a Point corresponding to the boundary weighted normal
+ */
+RealVectorValue boundaryWeightedNormal(const BoundaryName & boundary, MeshBase & mesh);
 
 /**
  * Compute a coordinate transformation volume integration factor
@@ -186,6 +206,17 @@ computeDistanceToAxis(const P & point, const Point & origin, const RealVectorVal
 {
   return (point - origin).cross(direction).norm();
 }
+
+/**
+ * Computes the maximum distance from all nodes of a mesh to a general axis
+ *
+ * @param[in] mesh mesh to get the distance from
+ * @param[in] origin  Axis starting point
+ * @param[in] direction  Axis direction
+ */
+Real computeMaxDistanceToAxis(const MeshBase & mesh,
+                              const Point & origin,
+                              const RealVectorValue & direction);
 
 /**
  * Computes a coordinate transformation factor for a general axisymmetric axis
@@ -520,7 +551,34 @@ void buildPolyLineMesh(MeshBase & mesh,
                        const std::vector<unsigned int> & nums_edges_between_points);
 
 /**
- * Generates meshes from edges connecting a list of points.
+ * Generates meshes from edges connecting a list of points, with optional midpoints to produce
+ * Edge3 elements so as to enable quadratic meshing. If mid_points is empty, Edge2 elements are
+ * produced.
+ * @param mesh The mesh to be built
+ * @param points The list of points defining the polyline
+ * @param mid_points The optional list of midpoints corresponding to the segments for quadratic
+ * elements. if provided, it must contains exactly one midpoint per segment and
+ * nums_edges_between_points must be unity for every segment.
+ * @param loop Whether the polyline is a closed loop
+ * @param start_boundary The boundary name to assign to the start of the polyline (if
+ * not a loop)
+ * @param end_boundary The boundary name to assign to the end of the polyline (if
+ * not a loop)
+ * @param nums_edges_between_points The numbers of edges to create between each pair of points
+ *  (if only one number is given, it is used for all point pairs)
+ */
+void buildPolyLineMesh(MeshBase & mesh,
+                       const std::vector<Point> & points,
+                       const std::vector<Point> & mid_points,
+                       const bool loop,
+                       const BoundaryName & start_boundary,
+                       const BoundaryName & end_boundary,
+                       const std::vector<unsigned int> & nums_edges_between_points);
+
+/**
+ * Generates meshes from edges connecting a list of points. Note that we do not support
+ * max_elem_size and quadratic mid points at the same time as we cannot pre-determine the number of
+ * mid points needed for quadratic elements when max_elem_size is specified.
  * @param mesh The mesh to be built
  * @param points The list of points defining the polyline
  * @param loop Whether the polyline is a closed loop

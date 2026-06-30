@@ -17,7 +17,7 @@ heated_length = 1.0
 ###################################################
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = ${n_rings}
     n_cells = ${n_cells}
     flat_to_flat = ${inner_duct_in}
@@ -28,60 +28,6 @@ heated_length = 1.0
     hwire = ${wire_z_spacing}
     spacer_z = '0.0'
     spacer_k = '0.0'
-  []
-
-  [fuel_pins]
-    type = SCMTriPinMeshGenerator
-    input = subchannel
-    nrings = ${n_rings}
-    n_cells = ${n_cells}
-    heated_length = ${heated_length}
-    pitch = ${fuel_pin_pitch}
-  []
-[]
-
-[AuxVariables]
-  [mdot]
-    block = subchannel
-  []
-  [SumWij]
-    block = subchannel
-  []
-  [P]
-    block = subchannel
-  []
-  [DP]
-    block = subchannel
-  []
-  [h]
-    block = subchannel
-  []
-  [T]
-    block = subchannel
-  []
-  [rho]
-    block = subchannel
-  []
-  [S]
-    block = subchannel
-  []
-  [w_perim]
-    block = subchannel
-  []
-  [mu]
-    block = subchannel
-  []
-  [displacement]
-    block = subchannel
-  []
-  [q_prime]
-    block = fuel_pins
-  []
-  [Tpin]
-    block = fuel_pins
-  []
-  [Dpin]
-    block = fuel_pins
   []
 []
 
@@ -96,7 +42,6 @@ heated_length = 1.0
   fp = Sodium
   n_blocks = 1
   P_out = report_pressure_outlet
-  CT = 2.6
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -110,6 +55,7 @@ heated_length = 1.0
   interpolation_scheme = 'upwind'
   pin_HTC_closure = 'gnielinski'
   friction_closure = 'Cheng'
+  mixing_closure = 'Cheng_Todreas'
 []
 
 [SCMClosures]
@@ -118,6 +64,10 @@ heated_length = 1.0
   []
   [gnielinski]
     type = SCMHTCGnielinski
+  []
+  [Cheng_Todreas]
+    type = SCMMixingChengTodreas
+    CT = 2.6
   []
 []
 
@@ -154,12 +104,6 @@ heated_length = 1.0
   [P_ic]
     type = ConstantIC
     variable = P
-    value = 0.0
-  []
-
-  [DP_ic]
-    type = ConstantIC
-    variable = DP
     value = 0.0
   []
 
@@ -273,12 +217,14 @@ heated_length = 1.0
 [Transfers]
   [subchannel_transfer]
     type = SCMSolutionTransfer
+    transfer_type = subchannel
     to_multi_app = viz
-    variable = 'mdot SumWij P DP h T rho mu S'
+    variable = 'mdot SumWij P h T rho mu S'
   []
   [pin_transfer]
-    type = SCMPinSolutionTransfer
+    type = SCMSolutionTransfer
+    transfer_type = pin
     to_multi_app = viz
-    variable = 'Dpin Tpin q_prime'
+    variable = 'Tpin q_prime Dpin'
   []
 []

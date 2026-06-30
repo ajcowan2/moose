@@ -53,6 +53,12 @@ libmesh_LIBS     := $(shell METHOD=$(METHOD) $(libmesh_config) --libs)
 libmesh_HOST     := $(shell METHOD=$(METHOD) $(libmesh_config) --host)
 libmesh_LDFLAGS  := $(shell METHOD=$(METHOD) $(libmesh_config) --ldflags)
 
+# Deduplicate rpath flags; libmesh-config --libs embeds rpaths from each bundled
+# dependency (libmesh, timpi, petsc) that share an installation prefix, producing
+# duplicate -rpath entries that macOS ld warns about.
+libmesh_LIBS    := $(shell printf '%s\n' $(libmesh_LIBS) | awk '!seen[$$0]++' | tr '\n' ' ')
+libmesh_LDFLAGS := $(shell printf '%s\n' $(libmesh_LDFLAGS) | awk '!seen[$$0]++' | tr '\n' ' ')
+
 # In the event that we're using something like mpicxx, query it for
 # the underlying compiler (like mpicxx -show); otherwise, fallback to
 # whatever libmesh_CXX is
@@ -111,6 +117,7 @@ libmesh_static  := $(shell $(libmesh_LIBTOOL) --config | grep build_old_libs | c
 
 #
 # libPNG Definition
+# Note: MOOSE_HAVE_LIBPNG will only be set if you run ./configure
 #
 png_LIB         :=
 # There is a linking problem where we have undefined symbols in the png library on Linux

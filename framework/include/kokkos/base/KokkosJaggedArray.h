@@ -159,7 +159,7 @@ JaggedArrayInnerData<T, inner, layout>::operator()(indices... i) const
 template <typename T,
           unsigned int inner,
           unsigned int outer,
-          typename index_type = dof_id_type,
+          typename index_type = MOOSE_KOKKOS_INDEX_TYPE,
           LayoutType layout = LayoutType::LEFT>
 class JaggedArray
 {
@@ -411,7 +411,10 @@ JaggedArray<T, inner, outer, index_type, layout>::finalize()
 
   _dims.copyToDevice();
   _offsets.copyToDevice();
-  _data.create(_offsets.last() + stride);
+
+  // Pad an extra element at the end to avoid accessing the bound in the following operators when
+  // the last inner array has zero size
+  _data.create(_offsets.last() + stride + 1);
 
   _finalized = true;
 }
