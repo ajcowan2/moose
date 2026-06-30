@@ -28,11 +28,9 @@ ExtendVelocityLevelSetAux::validParams()
   params.addRequiredParam<Real>("diffusivity_negative",
                                 "Diffusion coefficient on the negative level set side");
 
-  params.addRequiredParam<Real>("equilibrium_concentration_positive",
-                                "Equilibrium concentration on the positive side of interface");
-
-  params.addRequiredParam<Real>("equilibrium_concentration_negative",
-                                "Equilibrium concentration on the negative side of interface");
+  params.addParam<Real>("scale_factor",
+                         1.0,
+                         "Scalar multiplier applied to the computed velocity");
 
   MooseEnum model_type("empirical_correlation INL_ROM Stefan", "empirical_correlation");
   params.addRequiredParam<MooseEnum>("model_type",
@@ -51,9 +49,7 @@ ExtendVelocityLevelSetAux::ExtendVelocityLevelSetAux(const InputParameters & par
     _D_pos(getParam<Real>("diffusivity_positive")),
     _D_neg(getParam<Real>("diffusivity_negative")),
 
-    _Ceq_pos(getParam<Real>("equilibrium_concentration_positive")),
-    _Ceq_neg(getParam<Real>("equilibrium_concentration_negative")),
-
+    _scale_factor(getParam<Real>("scale_factor")),
     _model_type(getParam<MooseEnum>("model_type").template getEnum<model_type>())
 {
   if (!isNodal())
@@ -71,16 +67,43 @@ ExtendVelocityLevelSetAux::computeValue()
 
   _qp_points = _qp_value_uo.getQpPoint();
 
-  unsigned index = 0;
-  Real min_dist = std::numeric_limits<Real>::max();
+  unsigned index1 = 0;
+  unsigned index2 = 0;
+  Real min_dist1 = std::numeric_limits<Real>::max();
+  Real min_dist2 = std::numeric_limits<Real>::max();
   for (auto const & qp : _qp_points)
   {
     Real dist = (*_current_node - qp.second).norm();
-    if (dist < min_dist)
+    if (dist < min_dist1)
     {
-      min_dist = dist;
-      index = qp.first;
+      min_dist2 = min_dist1;
+      index2 = index1;
+
+      min_dist1 = dist;
+      index1 = qp.first;
     }
+    else if (dist < min_dist2)
+    {
+      min_dist2 = dist;
+      index2 = qp.first;
+    }
+  }
+
+  Real w1, w2;
+  if (min_dist1 < std::numeric_limits<Real>::epsilon())
+  {
+    w1 = 1.0; w2 = 0.0;
+  }
+  else if (min_dist2 == std::numeric_limits<Real>::max())
+  {
+    w1 = 1.0; w2 = 0.0;
+  }
+  else
+  {
+    Real inv1 = 1.0 / min_dist1;
+    Real inv2 = 1.0 / min_dist2;
+    w1 = inv1 / (inv1 + inv2);
+    w2 = inv2 / (inv1 + inv2);
   }
 
   Real vel = 0.0;
@@ -91,30 +114,42 @@ ExtendVelocityLevelSetAux::computeValue()
       Real temperature_avg = 1000; // [K] SiC average temperature
       vel = 38.232 * std::exp(-11342.3 / temperature_avg);
       vel *= 1.0e-6 / (3600.0 * 24.0);
+      vel *= _scale_factor;
       break;
     }
 
     case model_type::INL_ROM:
     {
       Real V_m = 40.096 / 3.21 * 1.0e-6; // [m^3/mol] SiC molar volume
-      Real net_flux = (-_D_pos * (_grad_values_positive_level_set_side[index] * _level_set_normal[index])) -
-                      (-_D_neg * (_grad_values_negative_level_set_side[index] * _level_set_normal[index]));
 
-      vel = 3 * V_m * net_flux;
+      Real flux_pos1 = -_D_pos * (_grad_values_positive_level_set_side[index1] * _level_set_normal[index1]);
+      Real flux_neg1 = -_D_neg * (_grad_values_negative_level_set_side[index1] * _level_set_normal[index1]);
+      Real vel1 = 3 * V_m * (flux_pos1 + flux_neg1);
+
+      Real flux_pos2 = -_D_pos * (_grad_values_positive_level_set_side[index2] * _level_set_normal[index2]);
+      Real flux_neg2 = -_D_neg * (_grad_values_negative_level_set_side[index2] * _level_set_normal[index2]);
+      Real vel2 = 3 * V_m * (flux_pos2 + flux_neg2);
+
+      vel = w1 * vel1 + w2 * vel2;
+      vel *= _scale_factor;
       break;
     }
 
     case model_type::Stefan:
     {
-      Real deltaC = _Ceq_pos - _Ceq_neg;
+      Real V_m = (2*106.42 + 28.085) / 9.59  * 1.0e-6;  // [m^3/mol] Pd2Si molar volume
+      Real mol_frac = 2.0 / 3.0;                        // [mol/mol] Molar fraction of Pd in Pd2Si
 
-      if (std::abs(deltaC) < 1e-16)
-        mooseError("Equilibrium concentrations are equal; interface velocity undefined.");
+      Real flux_pos1 = -_D_pos * (_grad_values_positive_level_set_side[index1] * _level_set_normal[index1]);
+      Real flux_neg1 = -_D_neg * (_grad_values_negative_level_set_side[index1] * _level_set_normal[index1]);
+      Real vel1 = V_m / mol_frac * (flux_pos1 + flux_neg1);
 
-      Real net_flux = (-_D_pos * (_grad_values_positive_level_set_side[index] * _level_set_normal[index])) -
-                      (-_D_neg * (_grad_values_negative_level_set_side[index] * _level_set_normal[index]));
+      Real flux_pos2 = -_D_pos * (_grad_values_positive_level_set_side[index2] * _level_set_normal[index2]);
+      Real flux_neg2 = -_D_neg * (_grad_values_negative_level_set_side[index2] * _level_set_normal[index2]);
+      Real vel2 = V_m / mol_frac * (flux_pos2 + flux_neg2);
 
-      vel = net_flux / deltaC;
+      vel = w1 * vel1 + w2 * vel2;
+      vel *= _scale_factor;
       break;
     }
 

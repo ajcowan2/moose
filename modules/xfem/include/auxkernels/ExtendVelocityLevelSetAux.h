@@ -34,9 +34,8 @@ protected:
   Real _D_pos;
   Real _D_neg;
 
-  /// Equilibrium concentrations at the interface
-  Real _Ceq_pos;
-  Real _Ceq_neg;
+  /// Scalar multiplier applied to the computed velocity
+  Real _scale_factor;
 
   /// The model type to use for velocity calculation
   const enum class model_type { empirical_correlation, INL_ROM, Stefan } _model_type;
