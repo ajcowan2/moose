@@ -23,6 +23,9 @@
 #include "libmesh/parallel_node.h"
 #include "libmesh/compare_elems_by_level.h"
 #include "libmesh/mesh_communication.h"
+#include "libmesh/edge_edge3.h"
+#include "libmesh/enum_to_string.h"
+#include "libmesh/unstructured_mesh.h"
 
 #include "timpi/parallel_sync.h"
 
@@ -278,8 +281,7 @@ meshCentroidCalculator(const MeshBase & mesh)
 {
   Point centroid_pt = Point(0.0, 0.0, 0.0);
   Real vol_tmp = 0.0;
-  for (const auto & elem :
-       as_range(mesh.active_local_elements_begin(), mesh.active_local_elements_end()))
+  for (const auto & elem : mesh.active_local_element_ptr_range())
   {
     Real elem_vol = elem->volume();
     centroid_pt += (elem->true_centroid()) * elem_vol;
@@ -289,6 +291,87 @@ meshCentroidCalculator(const MeshBase & mesh)
   mesh.comm().sum(vol_tmp);
   centroid_pt /= vol_tmp;
   return centroid_pt;
+}
+
+Point
+boundaryCentroidCalculator(const BoundaryName & boundary, MeshBase & mesh)
+{
+  // Need boundaries to be synchronized
+  if (!mesh.preparation().has_boundary_id_sets)
+    mesh.get_boundary_info().synchronize_global_id_set();
+  BoundaryInfo & mesh_boundary_info = mesh.get_boundary_info();
+  boundary_id_type boundary_id = mesh_boundary_info.get_id_by_name(boundary);
+  const auto side_list = mesh_boundary_info.build_side_list();
+
+  // Initialize sums
+  Real volume_sum = 0;
+  Point volume_weighted_centroid_sum(0, 0, 0);
+
+  for (const auto & [eid, side_i, bid] : side_list)
+  {
+    if (bid != boundary_id)
+      continue;
+
+    // Get the side
+    const auto elem = mesh.elem_ptr(eid);
+    const auto side = elem->side_ptr(side_i);
+
+    volume_sum += side->volume();
+    volume_weighted_centroid_sum += side->volume() * side->true_centroid();
+  }
+  // Sum across processes
+  mesh.comm().sum(volume_weighted_centroid_sum);
+  mesh.comm().sum(volume_sum);
+
+  return volume_weighted_centroid_sum / volume_sum;
+}
+
+RealVectorValue
+boundaryWeightedNormal(const BoundaryName & boundary, MeshBase & mesh)
+{
+  // Need boundaries to be synchronized
+  if (!mesh.preparation().has_boundary_id_sets)
+    mesh.get_boundary_info().synchronize_global_id_set();
+  BoundaryInfo & mesh_boundary_info = mesh.get_boundary_info();
+  boundary_id_type boundary_id = mesh_boundary_info.get_id_by_name(boundary);
+  const auto side_list = mesh_boundary_info.build_side_list();
+
+  // Initialize sums
+  Real volume_sum = 0;
+  RealVectorValue volume_weighted_normal_sum(0, 0, 0);
+
+  for (const auto & [eid, side_i, bid] : side_list)
+  {
+    if (bid != boundary_id)
+      continue;
+
+    // Get the side
+    const auto elem = mesh.elem_ptr(eid);
+    const auto side = elem->side_ptr(side_i);
+
+    volume_sum += side->volume();
+    volume_weighted_normal_sum += side->volume() * elem->side_vertex_average_normal(side_i);
+  }
+  // Sum across processes
+  mesh.comm().sum(volume_weighted_normal_sum);
+  mesh.comm().sum(volume_sum);
+
+  return volume_weighted_normal_sum / volume_sum;
+}
+
+Real
+computeMaxDistanceToAxis(const MeshBase & mesh,
+                         const Point & origin,
+                         const RealVectorValue & direction)
+{
+  Real distance = 0;
+  mooseAssert(MooseUtils::absoluteFuzzyEqual(direction.norm_sq(), 1),
+              "Direction should be normalized");
+  for (const auto & node : mesh.node_ptr_range())
+    if (const auto dist_node = (*node - origin).cross(direction).norm(); dist_node > distance)
+      distance = dist_node;
+  mesh.comm().max(distance);
+  return distance;
 }
 
 std::unordered_map<dof_id_type, dof_id_type>
@@ -435,6 +518,9 @@ getNextFreeSubdomainID(MeshBase & input_mesh)
 BoundaryID
 getNextFreeBoundaryID(MeshBase & input_mesh)
 {
+  if (!input_mesh.preparation().has_boundary_id_sets)
+    input_mesh.get_boundary_info().regenerate_id_sets();
+
   auto boundary_ids = input_mesh.get_boundary_info().get_boundary_ids();
   if (boundary_ids.empty())
     return 0;
@@ -618,14 +704,15 @@ buildBoundaryMesh(const MeshBase & input_mesh, const boundary_id_type boundary_i
   auto side_list = input_mesh.get_boundary_info().build_side_list();
 
   std::unordered_map<dof_id_type, dof_id_type> old_new_node_map;
-  for (const auto & bside : side_list)
+  for (const auto & [eid, side_i, bid] : side_list)
   {
-    if (std::get<2>(bside) != boundary_id)
+    if (bid != boundary_id)
       continue;
 
-    const Elem * elem = input_mesh.elem_ptr(std::get<0>(bside));
-    const auto side = std::get<1>(bside);
-    auto side_elem = elem->build_side_ptr(side);
+    // Get the side
+    const auto elem = input_mesh.elem_ptr(eid);
+    const auto side = elem->side_ptr(side_i);
+    auto side_elem = elem->build_side_ptr(side_i);
     auto copy = side_elem->build(side_elem->type());
 
     for (const auto i : side_elem->node_index_range())
@@ -908,14 +995,11 @@ getBoundaryNodes(const MeshBase & mesh, const BoundaryID boundary_id)
   // Get all nodes from the sideset with ID of boundary_id
   const auto & bc_sides =
       boundary_info.build_side_list(libMesh::BoundaryInfo::BCTupleSortBy::BOUNDARY_ID);
-  for (const auto & bc_s : bc_sides)
+  for (const auto & [elem_id, side, bc_id] : bc_sides)
   {
-    auto bc_id = std::get<2>(bc_s);
     if (bc_id == boundary_id)
     {
-      auto elem_id = std::get<0>(bc_s);
       const auto elem = mesh.elem_ptr(elem_id);
-      auto side = std::get<1>(bc_s);
       for (const auto ni : elem->nodes_on_side(side))
         boundary_node_ids.insert(elem->node_id(ni));
     }
@@ -923,12 +1007,9 @@ getBoundaryNodes(const MeshBase & mesh, const BoundaryID boundary_id)
 
   // Get all nodes from nodeset with ID of boundary_id
   const auto & bc_nodes = boundary_info.build_node_list();
-  for (const auto & bc_n : bc_nodes)
-  {
-    auto bc_id = std::get<1>(bc_n);
+  for (const auto & [n_id, bc_id] : bc_nodes)
     if (bc_id == boundary_id)
-      boundary_node_ids.insert(std::get<0>(bc_n));
-  }
+      boundary_node_ids.insert(n_id);
 
   return boundary_node_ids;
 }
@@ -1020,10 +1101,10 @@ createSubdomainFromSidesets(MeshBase & mesh,
 
   std::vector<std::pair<dof_id_type, ElemSidePair>> element_sides_on_boundary;
   dof_id_type counter = 0;
-  for (const auto & triple : side_list)
-    if (sidesets.count(std::get<2>(triple)))
+  for (const auto & [eid, side, bid] : side_list)
+    if (sidesets.count(bid))
     {
-      if (auto elem = mesh.query_elem_ptr(std::get<0>(triple)))
+      if (auto elem = mesh.query_elem_ptr(eid))
       {
         if (!elem->active())
           mooseError(
@@ -1031,8 +1112,7 @@ createSubdomainFromSidesets(MeshBase & mesh,
               "elements. Make sure that ",
               type_name,
               "s are run before any refinement generators");
-        element_sides_on_boundary.push_back(
-            std::make_pair(counter, ElemSidePair(elem, std::get<1>(triple))));
+        element_sides_on_boundary.push_back(std::make_pair(counter, ElemSidePair(elem, side)));
       }
       ++counter;
     }
@@ -1189,8 +1269,17 @@ copyIntoMesh(MeshGenerator & mg,
     // Note: if performance becomes an issue, this is overkill for just getting the max node id
     std::set<subdomain_id_type> source_ids;
     std::set<subdomain_id_type> dest_ids;
+
+    // We need source subdomain ids already cached; libMesh will
+    // scream otherwise
     source.subdomain_ids(source_ids, true);
+
+    // Our destination is non-const, so we can fix any missing caches
+    if (!destination.preparation().has_cached_elem_data)
+      destination.cache_elem_data();
+
     destination.subdomain_ids(dest_ids, true);
+
     mooseAssert(source_ids.size(), "Should have a subdomain");
     mooseAssert(dest_ids.size(), "Should have a subdomain");
     unsigned int max_dest_bid = *dest_ids.rbegin();
@@ -1313,6 +1402,7 @@ copyIntoMesh(MeshGenerator & mg,
 void
 buildPolyLineMesh(MeshBase & mesh,
                   const std::vector<Point> & points,
+                  const std::vector<Point> & mid_points,
                   const bool loop,
                   const BoundaryName & start_boundary,
                   const BoundaryName & end_boundary,
@@ -1322,6 +1412,17 @@ buildPolyLineMesh(MeshBase & mesh,
                   nums_edges_between_points.size() == points.size() - 1 + loop,
               "nums_edges_between_points must be either a single value or have the same number of "
               "entries as segments defined by the points.");
+  mooseAssert(
+      mid_points.size() == 0 || mid_points.size() == points.size() - (loop ? 0 : 1),
+      "mid_points must be either empty or have the consistent number of entries as points.");
+  mooseAssert(
+      mid_points.size() == 0 ||
+          (nums_edges_between_points.size() == 1 && nums_edges_between_points.front() == 1) ||
+          (nums_edges_between_points.size() == points.size() - 1 + loop &&
+           std::all_of(nums_edges_between_points.begin(),
+                       nums_edges_between_points.end(),
+                       [](unsigned int n) { return n == 1; })),
+      "mid_points can only be provided if each segment has exactly one edge.");
 
   const auto n_points = points.size();
   for (auto i : make_range(n_points))
@@ -1358,6 +1459,10 @@ buildPolyLineMesh(MeshBase & mesh,
       }
     }
   }
+  // Add mid points if applicable. When mid points are provided, each segment has exactly one edge,
+  // so the midpoint node ids follow the vertex node ids.
+  for (const auto & i : make_range(mid_points.size()))
+    mesh.add_point(mid_points[i], n_points + i);
 
   const auto n_segments = loop ? n_points : (n_points - 1);
   const auto n_elem =
@@ -1372,8 +1477,15 @@ buildPolyLineMesh(MeshBase & mesh,
       (loop ? 0 : 1);
   for (auto i : make_range(n_elem))
   {
+    std::unique_ptr<Elem> elem;
+    if (mid_points.size())
+    {
+      elem = std::make_unique<Edge3>();
+      elem->set_node(2, mesh.node_ptr(n_points + i));
+    }
+    else
+      elem = Elem::build(EDGE2);
     const auto ip1 = (i + 1) % max_nodes;
-    auto elem = Elem::build(EDGE2);
     elem->set_node(0, mesh.node_ptr(i));
     elem->set_node(1, mesh.node_ptr(ip1));
     elem->set_id() = i;
@@ -1401,6 +1513,18 @@ buildPolyLineMesh(MeshBase & mesh,
                   const bool loop,
                   const BoundaryName & start_boundary,
                   const BoundaryName & end_boundary,
+                  const std::vector<unsigned int> & nums_edges_between_points)
+{
+  buildPolyLineMesh(
+      mesh, points, {}, loop, start_boundary, end_boundary, nums_edges_between_points);
+}
+
+void
+buildPolyLineMesh(MeshBase & mesh,
+                  const std::vector<Point> & points,
+                  const bool loop,
+                  const BoundaryName & start_boundary,
+                  const BoundaryName & end_boundary,
                   const Real max_elem_size)
 {
   std::vector<unsigned int> nums_edges_between_points;
@@ -1417,7 +1541,8 @@ buildPolyLineMesh(MeshBase & mesh,
     nums_edges_between_points.push_back(n_elems);
   }
 
-  buildPolyLineMesh(mesh, points, loop, start_boundary, end_boundary, nums_edges_between_points);
+  buildPolyLineMesh(
+      mesh, points, {}, loop, start_boundary, end_boundary, nums_edges_between_points);
 }
 
 void

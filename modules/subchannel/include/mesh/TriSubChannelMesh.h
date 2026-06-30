@@ -28,6 +28,14 @@ public:
   std::unique_ptr<MooseMesh> safeClone() const override;
   void buildMesh() override;
 
+  /**
+   * Compute undeformed bundle-average inlet hydraulic quantities from generated mesh geometry
+   */
+  void computeAssemblyHydraulicParameters();
+
+  Real getSubchannelFlowArea(unsigned int i_chan, Real z) const override;
+  Real getSubchannelWettedPerimeter(unsigned int i_chan) const override;
+
   unsigned int getNumOfPins() const override { return processor_id() == 0 ? _npins : 0; }
 
   Node * getPinNode(unsigned int i_pin, unsigned int iz) const override
@@ -41,7 +49,7 @@ public:
   const Real & getDuctToPinGap() const { return _duct_to_pin_gap; }
 
   /**
-   * Return the number of rings
+   * Return the number of fuel-pin rings, counting the center pin as the first ring
    */
   const unsigned int & getNumOfRings() const { return _n_rings; }
 
@@ -107,6 +115,14 @@ public:
     return _gij_map[axial_index][gap_index];
   }
 
+  /**
+   * Set the gap width for a given axial cell and gap index
+   */
+  void setGapWidth(unsigned int axial_index, unsigned int gap_index, Real gap_width)
+  {
+    _gij_map[axial_index][gap_index] = gap_width;
+  }
+
   const std::pair<unsigned int, unsigned int> & getSweepFlowGaps(unsigned int i_chan) const
   {
     return _gap_pairs_sf[i_chan];
@@ -131,7 +147,7 @@ public:
   unsigned int pinIndex(const Point & p) const override;
 
 protected:
-  /// number of rings of fuel pins
+  /// number of fuel-pin rings, counting the center pin as the first ring
   unsigned int _n_rings;
   /// number of subchannels
   unsigned int _n_channels;
@@ -204,11 +220,9 @@ public:
   static void
   pinPositions(std::vector<Point> & positions, unsigned int nrings, Real pitch, Point center);
 
-  friend class SCMTriSubChannelMeshGenerator;
+  friend class SCMTriAssemblyMeshGenerator;
   friend class SCMTriDuctMeshGenerator;
-  friend class SCMTriPinMeshGenerator;
-  friend class SCMDetailedTriPinMeshGenerator;
-  friend class TriSubChannel1PhaseProblem;
+  friend class SCMDetailedTriAssemblyMeshGenerator;
 
   /// number of corners in the duct x-sec
   static const unsigned int N_CORNERS = 6;

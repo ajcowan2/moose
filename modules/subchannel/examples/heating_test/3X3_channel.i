@@ -9,7 +9,7 @@ n_cells = 20
 
 [QuadSubChannelMesh]
   [sub_channel]
-    type = SCMQuadSubChannelMeshGenerator
+    type = SCMQuadAssemblyMeshGenerator
     nx = 3
     ny = 3
     n_cells = '${n_cells}'
@@ -34,28 +34,33 @@ n_cells = 20
   type = QuadSubChannel1PhaseProblem
   fp = water
   n_blocks = 1
-  beta = 0.006
-  CT = 2.0
   P_tol = 1e-6
   T_tol = 1e-6
+  full_output = true
   compute_density = true
   compute_viscosity = true
   compute_power = true
   P_out = ${P_out}
   friction_closure = 'MATRA'
+  mixing_closure ='constant_beta'
+  pin_HTC_closure = 'Dittus-Boelter'
 []
 
 [SCMClosures]
   [MATRA]
     type = SCMFrictionMATRA
   []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.006
+    CT = 2.0
+  []
+  [Dittus-Boelter]
+    type = SCMHTCDittusBoelter
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMQuadFlowAreaIC
-    variable = S
-  []
 
   [T_ic]
     type = ConstantIC
@@ -63,10 +68,6 @@ n_cells = 20
     value = ${T_in}
   []
 
-  [w_perim_IC]
-    type = SCMQuadWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMQuadPowerIC
@@ -81,10 +82,16 @@ n_cells = 20
     value = 0.0
   []
 
-  [DP_ic]
+  # [DP_ic]
+  #   type = ConstantIC
+  #   variable = DP
+  #   value = 0.0
+  # []
+
+  [Dpin_ic]
     type = ConstantIC
-    variable = DP
-    value = 0.0
+    variable = Dpin
+    value = 0.00950
   []
 
   [Viscosity_ic]
@@ -216,6 +223,13 @@ n_cells = 20
   [xfer]
     type = SCMSolutionTransfer
     to_multi_app = viz
-    variable = 'mdot SumWij P DP h T rho mu q_prime S w_perim'
+    transfer_type = subchannel
+    variable = 'mdot SumWij P DP h T rho mu S w_perim'
+  []
+  [xfer_q_prime]
+    type = SCMSolutionTransfer
+    to_multi_app = viz
+    transfer_type = pin
+    variable = q_prime
   []
 []

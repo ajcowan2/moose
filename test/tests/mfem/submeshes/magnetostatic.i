@@ -64,13 +64,20 @@
 []
 
 [Kernels]
+  inactive = coefficient_source
   [curlcurl]
     type = MFEMCurlCurlKernel
     variable = a_field
   []
-  [source]
+  [auxvar_source]
     type = MFEMMixedVectorGradientKernel
     trial_variable = electric_potential
+    variable = a_field
+    block = 1
+  []
+  [coefficient_source]
+    type = MFEMVectorFEDomainLFKernel
+    vector_coefficient = electric_potential_grad
     variable = a_field
     block = 1
   []
@@ -84,10 +91,12 @@
   []
 []
 
-[Solver]
-  type = MFEMHypreGMRES
-  preconditioner = ams
-  l_tol = 1e-12
+[Solvers]
+  [main]
+    type = MFEMHypreGMRES
+    preconditioner = ams
+    l_tol = 1e-12
+  []
 []
 
 [Executioner]
@@ -106,8 +115,8 @@
 [Transfers]
   [from_sub]
     type = MultiAppMFEMCopyTransfer
-    source_variable = electric_potential
-    variable = electric_potential
+    source_variables = electric_potential
+    variables = electric_potential
     from_multi_app = subapp
   []
 []

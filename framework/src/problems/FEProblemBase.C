@@ -341,7 +341,7 @@ FEProblemBase::validParams()
       "Set to true to allow convergence even though the solution has been marked as 'invalid'");
   params.addParam<bool>("show_invalid_solution_console",
                         true,
-                        "Set to true to show the invalid solution occurance summary in console");
+                        "Set to true to show the invalid solution occurrence summary in console");
   params.addParam<bool>("immediately_print_invalid_solution",
                         false,
                         "Whether or not to report invalid solution warnings at the time the "
@@ -495,6 +495,9 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
     _fv_bcs_integrity_check(getParam<bool>("fv_bcs_integrity_check")),
     _material_dependency_check(getParam<bool>("material_dependency_check")),
     _uo_aux_state_check(getParam<bool>("check_uo_aux_state")),
+#ifndef NDEBUG
+    _check_residual_for_nans(false),
+#endif
     _max_qps(std::numeric_limits<unsigned int>::max()),
     _max_scalar_order(INVALID_ORDER),
     _has_time_integrator(false),
@@ -669,6 +672,15 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
 
 const MooseMesh &
 FEProblemBase::mesh(bool use_displaced) const
+{
+  if (use_displaced && !_displaced_problem)
+    mooseWarning("Displaced mesh was requested but the displaced problem does not exist. "
+                 "Regular mesh will be returned");
+  return ((use_displaced && _displaced_problem) ? _displaced_problem->mesh() : mesh());
+}
+
+MooseMesh &
+FEProblemBase::mesh(bool use_displaced)
 {
   if (use_displaced && !_displaced_problem)
     mooseWarning("Displaced mesh was requested but the displaced problem does not exist. "
@@ -1415,44 +1427,46 @@ FEProblemBase::initialSetup()
     Threads::parallel_reduce(bnd_nodes, bnict);
 
     // Nodal bcs aren't threaded
-    const auto & node_to_elem_map = _mesh.nodeToActiveSemilocalElemMap();
-    for (const auto & bnode : bnd_nodes)
+    for (auto & nl : _nl)
     {
-      const auto boundary_id = bnode->_bnd_id;
-      const Node * const node = bnode->_node;
-
-      if (node->processor_id() != this->processor_id())
+      const auto & nodal_bcs = nl->getNodalBCWarehouse();
+      if (!nodal_bcs.hasBoundaryObjects())
         continue;
 
-      // Only check vertices. Variables may not be defined on non-vertex nodes (think first order
-      // Lagrange on a second order mesh) and user-code can often handle that
-      const Elem * const an_elem =
-          _mesh.getMesh().elem_ptr(libmesh_map_find(node_to_elem_map, node->id()).front());
-      if (!an_elem->is_vertex(an_elem->get_node_index(node)))
-        continue;
-
-      const auto & bnd_name = _mesh.getBoundaryName(boundary_id);
-
-      for (auto & nl : _nl)
+      for (const auto & bnode : bnd_nodes)
       {
-        const auto & nodal_bcs = nl->getNodalBCWarehouse();
-        if (!nodal_bcs.hasBoundaryObjects(boundary_id, 0))
+        const auto boundary_id = bnode->_bnd_id;
+        const Node * const node = bnode->_node;
+
+        if (node->processor_id() != this->processor_id())
           continue;
 
-        const auto & bnd_objects = nodal_bcs.getBoundaryObjects(boundary_id, 0);
+        const auto & bnd_name = _mesh.getBoundaryName(boundary_id);
+
+        // Avoid assertion in getBoundaryObjects that we have boundary objects for this boundary ID
+        if (!nodal_bcs.hasBoundaryObjects(boundary_id))
+          continue;
+
+        const auto & bnd_objects = nodal_bcs.getBoundaryObjects(boundary_id);
         for (const auto & bnd_object : bnd_objects)
+        {
+          const auto & bnd_variable = bnd_object->variable();
           // Skip if this object uses geometric search because coupled variables may be defined on
-          // paired boundaries instead of the boundary this node is on
+          // paired boundaries instead of the boundary this node is on. Also skip if this boundary
+          // condition isn't applicable to the current node, e.g. if the node doesn't have any
+          // degrees of freedom for the boundary condition's variable
           if (!bnd_object->requiresGeometricSearch() &&
-              bnd_object->checkVariableBoundaryIntegrity())
+              bnd_object->checkVariableBoundaryIntegrity() &&
+              node->n_dofs(nl->number(), bnd_variable.number()))
           {
             std::set<MooseVariableFieldBase *> vars_to_omit = {
                 &static_cast<MooseVariableFieldBase &>(
-                    const_cast<MooseVariableBase &>(bnd_object->variable()))};
+                    const_cast<MooseVariableBase &>(bnd_variable))};
 
             boundaryIntegrityCheckError(
                 *bnd_object, bnd_object->checkAllVariables(*node, vars_to_omit), bnd_name);
           }
+        }
       }
     }
   }
@@ -2719,7 +2733,14 @@ FEProblemBase::getFunction(const std::string & name, const THREAD_ID tid)
 
     // Try once more
     if (!hasFunction(name, tid))
+    {
+      mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_function"),
+                  "getFunction() was called before Functions have been constructed. The requested "
+                  "Function '" +
+                      name + "' may exist in the input file, but Functions are not available yet.");
+
       mooseError("Unable to find function " + name);
+    }
   }
 
   auto * const ret = dynamic_cast<Function *>(_functions.getActiveObject(name, tid).get());
@@ -2805,6 +2826,18 @@ FEProblemBase::addDistribution(const std::string & type,
   addObject<Distribution>(type, name, parameters, /* threaded = */ false);
 }
 
+bool
+FEProblemBase::hasDistribution(const std::string & name) const
+{
+  std::vector<Distribution *> objs;
+  theWarehouse()
+      .query()
+      .condition<AttribSystem>("Distribution")
+      .condition<AttribName>(name)
+      .queryInto(objs);
+  return !objs.empty();
+}
+
 Distribution &
 FEProblemBase::getDistribution(const std::string & name)
 {
@@ -2815,7 +2848,13 @@ FEProblemBase::getDistribution(const std::string & name)
       .condition<AttribName>(name)
       .queryInto(objs);
   if (objs.empty())
+  {
+    mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_distribution"),
+                "A Distribution getter was called before Distributions have been constructed. "
+                "If you are attempting to access this object in the constructor of another object "
+                "then make sure that the Distribution is constructed before the object using it.");
     mooseError("Unable to find Distribution with name '" + name + "'");
+  }
   return *(objs[0]);
 }
 
@@ -2840,10 +2879,17 @@ FEProblemBase::getSampler(const std::string & name, const THREAD_ID tid)
       .condition<AttribName>(name)
       .queryInto(objs);
   if (objs.empty())
+  {
+    mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_sampler"),
+                "A Sampler getter was called before Samplers have been constructed. "
+                "If you are attempting to access this object in the constructor of another object "
+                "then make sure that the Sampler is constructed before the object using it.");
+
     mooseError(
         "Unable to find Sampler with name '" + name +
         "', if you are attempting to access this object in the constructor of another object then "
-        "the object being retrieved must occur prior to the caller within the input file.");
+        "make sure that the Sampler is constructed before the object using it.");
+  }
   return *(objs[0]);
 }
 
@@ -2991,6 +3037,8 @@ FEProblemBase::addVariable(const std::string & var_type,
   _solver_var_to_sys_num[var_name] = solver_system_number;
 
   markFamilyPRefinement(params);
+  if (_displaced_problem)
+    _displaced_problem->markFamilyPRefinement(params);
 }
 
 std::pair<bool, unsigned int>
@@ -3291,6 +3339,8 @@ FEProblemBase::addAuxVariable(const std::string & var_type,
     _displaced_problem->addAuxVariable(var_type, var_name, params);
 
   markFamilyPRefinement(params);
+  if (_displaced_problem)
+    _displaced_problem->markFamilyPRefinement(params);
 }
 
 void
@@ -3339,6 +3389,8 @@ FEProblemBase::addAuxVariable(const std::string & var_name,
     _displaced_problem->addAuxVariable("MooseVariable", var_name, params);
 
   markFamilyPRefinement(params);
+  if (_displaced_problem)
+    _displaced_problem->markFamilyPRefinement(params);
 }
 
 void
@@ -3371,6 +3423,8 @@ FEProblemBase::addAuxArrayVariable(const std::string & var_name,
     _displaced_problem->addAuxVariable("ArrayMooseVariable", var_name, params);
 
   markFamilyPRefinement(params);
+  if (_displaced_problem)
+    _displaced_problem->markFamilyPRefinement(params);
 }
 
 void
@@ -4095,7 +4149,14 @@ FEProblemBase::addMaterialHelper(std::vector<MaterialWarehouse *> warehouses,
     parameters.set<SubProblem *>("_subproblem") = this;
   }
 
-  for (THREAD_ID tid = 0; tid < libMesh::n_threads(); tid++)
+  unsigned int n_threads = libMesh::n_threads();
+
+#ifdef MOOSE_KOKKOS_ENABLED
+  if (parameters.isKokkosObject())
+    n_threads = 1;
+#endif
+
+  for (THREAD_ID tid = 0; tid < n_threads; tid++)
   {
     // Create the general Block/Boundary MaterialBase object
     std::shared_ptr<MaterialBase> material =
@@ -4669,7 +4730,14 @@ FEProblemBase::getUserObjectBase(const std::string & name, const THREAD_ID tid /
       .condition<AttribName>(name)
       .queryInto(objs);
   if (objs.empty())
+  {
+    mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_user_object"),
+                "A UserObject getter was called before UserObjects have been constructed. The "
+                "requested UserObject '" +
+                    name + "' may exist in the input file, but UserObjects are not available yet.");
+
     mooseError("Unable to find user object with name '" + name + "'");
+  }
   mooseAssert(objs.size() == 1, "Should only find one UO");
   return *(objs[0]);
 }
@@ -4715,7 +4783,15 @@ FEProblemBase::getFVInterpolationMethod(const InterpolationMethodName & name,
       .queryInto(methods);
 
   if (methods.empty())
+  {
+    mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_interpolation_method"),
+                "An FVInterpolationMethod getter was called before FVInterpolationMethods have "
+                "been constructed. If you are attempting to access this object in the constructor "
+                "of another object then make sure that the FVInterpolationMethod is constructed "
+                "before the object using it.");
+
     mooseError("Unable to find FVInterpolationMethod with name '", name, "'");
+  }
 
   mooseAssert(methods.size() == 1, "Expected a single FVInterpolationMethod per thread");
   return *(methods[0]);
@@ -4774,6 +4850,25 @@ FEProblemBase::hasPostprocessorValueByName(const PostprocessorName & name) const
   return _reporter_data.hasReporterValue<PostprocessorValue>(PostprocessorReporterName(name));
 }
 
+const Postprocessor &
+FEProblemBase::getPostprocessorObjectByName(const PostprocessorName & object_name,
+                                            const THREAD_ID tid) const
+{
+  std::vector<Postprocessor *> objs;
+  theWarehouse()
+      .query()
+      .condition<AttribInterfaces>(Interfaces::Postprocessor)
+      .condition<AttribThread>(tid)
+      .condition<AttribName>(object_name)
+      .queryInto(objs);
+
+  if (objs.empty())
+    mooseError("Unable to find Postprocessor with name '", object_name, "'");
+  mooseAssert(objs.size() == 1,
+              "We shouldn't find more than one postprocessor object for a given name");
+  return *(objs[0]);
+}
+
 const PostprocessorValue &
 FEProblemBase::getPostprocessorValueByName(const PostprocessorName & name,
                                            std::size_t t_index) const
@@ -4822,7 +4917,28 @@ const VectorPostprocessor &
 FEProblemBase::getVectorPostprocessorObjectByName(const std::string & object_name,
                                                   const THREAD_ID tid) const
 {
-  return getUserObject<VectorPostprocessor>(object_name, tid);
+  std::vector<VectorPostprocessor *> objs;
+  theWarehouse()
+      .query()
+      .condition<AttribInterfaces>(Interfaces::VectorPostprocessor)
+      .condition<AttribThread>(tid)
+      .condition<AttribName>(object_name)
+      .queryInto(objs);
+
+  if (objs.empty())
+  {
+    mooseAssert(
+        getMooseApp().actionWarehouse().isTaskComplete("add_vector_postprocessor"),
+        "A VectorPostprocessor getter was called before VectorPostprocessors have been "
+        "constructed. The requested VectorPostprocessor '" +
+            object_name +
+            "' may exist in the input file, but VectorPostprocessors are not available yet.");
+
+    mooseError("Unable to find VectorPostprocessor with name '", object_name, "'");
+  }
+  mooseAssert(objs.size() == 1,
+              "We shouldn't find more than one vector postprocessor object for a given name");
+  return *(objs[0]);
 }
 
 void
@@ -5001,13 +5117,7 @@ FEProblemBase::execute(const ExecFlagType & exec_type)
         exec_type == EXEC_SUBDOMAIN || exec_type == EXEC_NONLINEAR || exec_type == EXEC_LINEAR))
     customSetup(exec_type);
 
-  // Samplers; EXEC_INITIAL is not called because the Sampler::init() method that is called after
-  // construction makes the first Sampler::execute() call. This ensures that the random number
-  // generator object is the correct state prior to any other object (e.g., Transfers) attempts to
-  // extract data from the Sampler. That is, if the Sampler::execute() call is delayed to here
-  // then it is not in the correct state for other objects.
-  if (exec_type != EXEC_INITIAL)
-    executeSamplers(exec_type);
+  executeSamplers(exec_type);
 
   // Pre-aux UserObjects
   computeUserObjects(exec_type, Moose::PRE_AUX);
@@ -5409,11 +5519,16 @@ FEProblemBase::computeUserObjectsInternal(const ExecFlagType & type, TheWarehous
       q.queryInto(tguos);
 
       ComputeThreadedGeneralUserObjectsThread ctguot(*this);
-      Threads::parallel_reduce(GeneralUserObjectRange(tguos.begin(), tguos.end()), ctguot);
+
+      // Force one thread per ThreadedGeneralUserObject via grainsize
+      Threads::parallel_reduce(GeneralUserObjectRange(tguos.begin(),
+                                                      tguos.end(),
+                                                      /*grainsize=*/1),
+                               ctguot);
       joinAndFinalize(q);
     }
 
-      // Execute general user objects
+    // Execute general user objects
     joinAndFinalize(query.clone().condition<AttribInterfaces>(Interfaces::GeneralUserObject), true);
   }
   catch (...)
@@ -5728,6 +5843,12 @@ FEProblemBase::hasMultiApp(const std::string & multi_app_name) const
 std::shared_ptr<MultiApp>
 FEProblemBase::getMultiApp(const std::string & multi_app_name) const
 {
+  if (!hasMultiApp(multi_app_name))
+    mooseAssert(getMooseApp().actionWarehouse().isTaskComplete("add_multi_app"),
+                "A MultiApp getter was called before MultiApps have been constructed. "
+                "If you are attempting to access this object in the constructor of another object "
+                "then make sure that the MultiApp is constructed before the object using it.");
+
   return _multi_apps.getObject(multi_app_name);
 }
 
@@ -8620,7 +8741,7 @@ FEProblemBase::meshChanged(const bool intermediate_change,
   // Just like we reinitialized our geometric search objects, we also need to reinitialize our
   // mortar meshes. Note that this needs to happen after DisplacedProblem::meshChanged because the
   // mortar mesh discretization will depend necessarily on the displaced mesh being re-displaced
-  updateMortarMesh();
+  _mortar_data->meshChanged();
 
   // Nonlinear systems hold the mortar mesh functors. The domains of definition of the mortar
   // functors might have changed when the mesh changed.
@@ -9338,32 +9459,16 @@ FEProblemBase::addOutput(const std::string & object_type,
   // Add a pointer to the FEProblemBase class
   parameters.addPrivateParam<FEProblemBase *>("_fe_problem_base", this);
 
-  // Create common parameter exclude list
-  std::vector<std::string> exclude;
-  if (object_type == "Console")
-  {
-    exclude.push_back("execute_on");
+  // --show-input should enable the display of the input file on the screen
+  if (object_type == "Console" && _app.getParam<bool>("show_input") &&
+      parameters.get<bool>("output_screen"))
+    parameters.set<ExecFlagEnum>("execute_input_on") = EXEC_INITIAL;
 
-    // --show-input should enable the display of the input file on the screen
-    if (_app.getParam<bool>("show_input") && parameters.get<bool>("output_screen"))
-      parameters.set<ExecFlagEnum>("execute_input_on") = EXEC_INITIAL;
-  }
-  // Need this because Checkpoint::validParams changes the default value of
-  // execute_on
-  else if (object_type == "Checkpoint")
-    exclude.push_back("execute_on");
-
-  // Apply the common parameters loaded with Outputs input syntax
+  // Apply only user-set parameters from the common [Outputs] block so that
+  // each output type's own defaults are not overridden by common defaults.
   const InputParameters * common = output_warehouse.getCommonParameters();
   if (common)
-    parameters.applyParameters(*common, exclude);
-  if (common && std::find(exclude.begin(), exclude.end(), "execute_on") != exclude.end() &&
-      common->isParamSetByUser("execute_on") && object_type != "Console")
-    mooseInfoRepeated(
-        "'execute_on' parameter specified in [Outputs] block is ignored for object '" +
-        object_name +
-        "'.\nDefine this object in its own sub-block of [Outputs] to modify its "
-        "execution schedule.");
+    parameters.applyCommonUserSetParameters(*common);
 
   // Set the correct value for the binary flag for XDA/XDR output
   if (object_type == "XDR")

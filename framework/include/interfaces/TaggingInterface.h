@@ -421,6 +421,13 @@ private:
                                 const std::set<TagID> & vector_tags,
                                 const std::set<TagID> & absolute_value_vector_tags);
 
+#ifndef NDEBUG
+  /**
+   * Checks \c _local_re for NaNs/Infs and returns an error if found
+   */
+  void checkForNans() const;
+#endif
+
   /// The vector tag ids this Kernel will contribute to
   std::set<TagID> _vector_tags;
 
@@ -672,22 +679,4 @@ TaggingInterface::setResidual(SystemBase & sys, const SetResidualFunctor set_res
   for (const auto tag_id : _vector_tags)
     if (sys.hasVector(tag_id))
       set_residual_functor(sys.getVector(tag_id));
-}
-
-inline void
-TaggingInterface::addResiduals(Assembly & assembly, const ADResidualsPacket & packet)
-{
-  addResiduals(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
-}
-
-inline void
-TaggingInterface::addResidualsAndJacobian(Assembly & assembly, const ADResidualsPacket & packet)
-{
-  addResidualsAndJacobian(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
-}
-
-inline void
-TaggingInterface::addJacobian(Assembly & assembly, const ADResidualsPacket & packet)
-{
-  addJacobian(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
 }

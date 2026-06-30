@@ -48,16 +48,16 @@ ElementsToTetrahedronsConverter::ElementsToTetrahedronsConverter(const InputPara
 std::unique_ptr<MeshBase>
 ElementsToTetrahedronsConverter::generate()
 {
-  auto replicated_mesh_ptr = dynamic_cast<ReplicatedMesh *>(_input.get());
-  if (!replicated_mesh_ptr)
-    paramError("input", "Input is not a replicated mesh, which is required");
-  if (*(replicated_mesh_ptr->elem_dimensions().begin()) != 3 ||
-      *(replicated_mesh_ptr->elem_dimensions().rbegin()) != 3)
+  // We're querying elem dim caches from our input mesh
+  if (!_input->preparation().has_cached_elem_data)
+    _input->cache_elem_data();
+
+  if (!_input->is_serial())
+    paramError("input", "Input is mesh not serialized, which is required");
+  if (*(_input->elem_dimensions().begin()) != 3 || *(_input->elem_dimensions().rbegin()) != 3)
     paramError("input", "Only 3D meshes are supported.");
 
-  ReplicatedMesh & mesh = *replicated_mesh_ptr;
-
-  MooseMeshElementConversionUtils::convert3DMeshToAllTet4(mesh);
+  MooseMeshElementConversionUtils::convert3DMeshToAllTet4(*_input);
 
   return std::move(_input);
 }

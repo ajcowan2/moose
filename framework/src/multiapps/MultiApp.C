@@ -36,10 +36,11 @@
 #include "libmesh/numeric_vector.h"
 
 // C++ includes
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
-#include <algorithm>
+#include <set>
 
 // Call to "uname"
 #ifdef LIBMESH_HAVE_SYS_UTSNAME_H
@@ -1156,9 +1157,17 @@ MultiApp::createApp(unsigned int i, Real start_time)
   std::vector<std::string> input_cli_args;
   if (cliArgs().size() > 0 || _cli_args_from_file.size() > 0)
     input_cli_args = getCommandLineArgs(i);
+  // FullSolveMultiApp (and its derived classes) always performs a complete fresh
+  // solve on every execution, so the parent's recovery-related global CLI params
+  // must not be propagated to those sub-apps.
+  const std::set<std::string> recover_exclude =
+      propagateRecoverToSubApps()
+          ? std::set<std::string>{}
+          : std::set<std::string>{"recover", "test_checkpoint_half_transient"};
   // This will mark all hit CLI command line parameters that are passed to subapps
   // as used within the parent app (_app)
-  auto app_cli = _app.commandLine()->initSubAppCommandLine(name(), multiapp_name, input_cli_args);
+  auto app_cli = _app.commandLine()->initSubAppCommandLine(
+      name(), multiapp_name, input_cli_args, recover_exclude);
   app_cli->parse();
 
   if (_fe_problem.verboseMultiApps())
@@ -1170,10 +1179,23 @@ MultiApp::createApp(unsigned int i, Real start_time)
   app_params.set<unsigned int>("_multiapp_number") = _first_local_app + i;
   app_params.set<const MooseMesh *>("_master_mesh") = &_fe_problem.mesh();
 #ifdef MOOSE_MFEM_ENABLED
-  app_params.set<std::shared_ptr<mfem::Device>>("_mfem_device") =
-      _app.getMFEMDevice(Moose::PassKey<MultiApp>());
-  const auto & mfem_device_set = _app.getMFEMDevices(Moose::PassKey<MultiApp>());
-  app_params.set<std::set<std::string>>("_mfem_devices") = mfem_device_set;
+  // MFEM device must only be set once across all apps
+  // FIXME: this required that the base app is an MFEM app; itwill
+  // still fail if multiple MFEM sub-apps are launched from a libMesh base app
+  if (i == 0)
+  {
+    app_params.set<std::shared_ptr<mfem::Device>>("_mfem_device") =
+        _app.getMFEMDevice(Moose::PassKey<MultiApp>());
+    const auto & mfem_device_set = _app.getMFEMDevices(Moose::PassKey<MultiApp>());
+    app_params.set<std::set<std::string>>("_mfem_devices") = mfem_device_set;
+  }
+  else
+  {
+    app_params.set<std::shared_ptr<mfem::Device>>("_mfem_device") =
+        _apps[0]->getMFEMDevice(Moose::PassKey<MultiApp>());
+    const auto & mfem_device_set = _apps[0]->getMFEMDevices(Moose::PassKey<MultiApp>());
+    app_params.set<std::set<std::string>>("_mfem_devices") = mfem_device_set;
+  }
 #endif
   if (getParam<bool>("clone_master_mesh") || getParam<bool>("clone_parent_mesh"))
   {
@@ -1222,7 +1244,7 @@ MultiApp::createApp(unsigned int i, Real start_time)
   app->setGlobalTimeOffset(start_time);
   app->setOutputFileNumbers(_app.getOutputWarehouse().getFileNumbers());
   app->setRestart(_app.isRestarting());
-  app->setRecover(_app.isRecovering());
+  app->setRecover(propagateRecoverToSubApps() && _app.isRecovering());
 
   if (_use_positions && getParam<bool>("output_in_position"))
     app->setOutputPosition(_app.getOutputPosition() + _positions[_first_local_app + i]);

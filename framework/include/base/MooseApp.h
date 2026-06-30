@@ -63,6 +63,7 @@ class FEProblemBase;
 class InputParameterWarehouse;
 class CommandLine;
 class RelationshipManager;
+class ReporterData;
 class SolutionInvalidity;
 class MultiApp;
 #ifdef MOOSE_MFEM_ENABLED
@@ -802,6 +803,21 @@ public:
   std::unique_ptr<Backup> finalizeRestore();
 
   /**
+   * Restores \p value in place from the checkpoint reader if it is present in the checkpoint
+   * and has not yet been loaded. Used to recover data (e.g. reporter values) that is declared
+   * after the bulk restore pass while the reader window is still open. No-op on non-recover
+   * runs and for data declared before the restore window opens.
+   *
+   * @return Whether or not the value was restored
+   */
+  bool restoreDataIfAvailable(RestartableDataValue & value,
+                              const THREAD_ID tid,
+                              Moose::PassKey<ReporterData>)
+  {
+    return _rd_reader.restoreDataIfAvailable(value, tid, {});
+  }
+
+  /**
    * Returns a string to be printed at the beginning of a simulation
    */
   virtual std::string header() const;
@@ -1082,7 +1098,9 @@ public:
    * Create/configure the MFEM device with the provided \p device_string. More than one device can
    * be configured. If supplying multiple devices, they should be comma separated
    */
-  void setMFEMDevice(const std::string & device_string, Moose::PassKey<MFEMProblemSolve>);
+  void setMFEMDevice(const std::string & device_string,
+                     bool gpu_aware_mpi,
+                     Moose::PassKey<MFEMProblemSolve>);
 
   /**
    * Get the MFEM device object
@@ -1583,6 +1601,14 @@ private:
    * @return a Boolean value used to indicate whether the application should exit early
    */
   bool runInputs();
+
+  /**
+   * Handles the --citations command-line option: registers with PETSc the BibTeX entries that
+   * should be cited for the framework and the modules/objects used in this simulation, and enables
+   * PETSc's -citations option. PETSc prints them (together with its own and its sub-packages'
+   * citations) at PetscFinalize, to the console or to a file if one was given.
+   */
+  void requestCitations();
 
   /**
    * Internal method for adding a capability.

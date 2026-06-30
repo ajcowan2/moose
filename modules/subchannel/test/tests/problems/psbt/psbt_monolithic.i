@@ -5,8 +5,8 @@ P_out = 4.923e6 # Pa
 pin_diameter = 0.00950
 
 [QuadSubChannelMesh]
-  [sub_channel]
-    type = SCMQuadSubChannelMeshGenerator
+  [assembly]
+    type = SCMQuadAssemblyMeshGenerator
     nx = 6
     ny = 6
     n_cells = 10
@@ -16,16 +16,8 @@ pin_diameter = 0.00950
     heated_length = 1.0
     spacer_z = '0.0'
     spacer_k = '0.0'
-  []
-
-  [fuel_pins]
-    type = SCMQuadPinMeshGenerator
-    input = sub_channel
-    nx = 6
-    ny = 6
-    n_cells = 10
-    pitch = 0.0126
-    heated_length = 1.0
+    subchannel_block_id = 0
+    pin_block_id = 1
   []
 []
 
@@ -39,8 +31,6 @@ pin_diameter = 0.00950
   type = QuadSubChannel1PhaseProblem
   fp = water
   n_blocks = 1
-  beta = 0.006
-  CT = 2.6
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -50,6 +40,8 @@ pin_diameter = 0.00950
   segregated = false
   friction_closure = 'MATRA'
   pin_HTC_closure = 'Dittus-Boelter'
+  full_output = true
+  mixing_closure ='constant_beta'
 []
 
 [SCMClosures]
@@ -59,18 +51,15 @@ pin_diameter = 0.00950
   [Dittus-Boelter]
     type = SCMHTCDittusBoelter
   []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.006
+    CT = 2.6
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMQuadFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMQuadWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMQuadPowerIC
@@ -86,11 +75,6 @@ pin_diameter = 0.00950
     value = ${T_in}
   []
 
-  [Dpin_ic]
-    type = ConstantIC
-    variable = Dpin
-    value = ${pin_diameter}
-  []
 
   [P_ic]
     type = ConstantIC
@@ -142,7 +126,7 @@ pin_diameter = 0.00950
     boundary = inlet
     value = ${T_in}
     execute_on = 'timestep_begin'
-    block = sub_channel
+    block = subchannel
   []
   [mdot_in_bc]
     type = SCMMassFlowRateAux
@@ -151,7 +135,7 @@ pin_diameter = 0.00950
     area = S
     mass_flux = report_mass_flux_inlet
     execute_on = 'timestep_begin'
-    block = sub_channel
+    block = subchannel
   []
 []
 
@@ -210,6 +194,7 @@ pin_diameter = 0.00950
 []
 
 [Outputs]
+  exodus = true
   csv = true
 []
 

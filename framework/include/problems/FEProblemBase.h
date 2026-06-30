@@ -179,6 +179,7 @@ public:
   virtual MooseMesh & mesh() override { return _mesh; }
   virtual const MooseMesh & mesh() const override { return _mesh; }
   const MooseMesh & mesh(bool use_displaced) const override;
+  MooseMesh & mesh(bool use_displaced);
 
   void setCoordSystem(const std::vector<SubdomainName> & blocks, const MultiMooseEnum & coord_sys);
   void setAxisymmetricCoordAxis(const MooseEnum & rz_coord_axis);
@@ -223,6 +224,16 @@ public:
    *       has been activated by users through Problem/check_uo_aux_state input parameter.
    */
   bool checkingUOAuxState() const { return _checking_uo_aux_state; }
+
+#ifndef NDEBUG
+  virtual bool checkResidualForNans() const override { return _check_residual_for_nans; }
+
+  /// Setter for residual NaN/Inf checking
+  void setCheckResidualForNans(bool check_residual_for_nans)
+  {
+    _check_residual_for_nans = check_residual_for_nans;
+  }
+#endif
 
   /**
    * Whether to trust the user coupling matrix even if we want to do things like be paranoid and
@@ -687,7 +698,7 @@ public:
    * @param name The Kokkos function name
    * @returns Whether a Kokkos function exists
    */
-  virtual bool hasKokkosFunction(const std::string & name);
+  virtual bool hasKokkosFunction(const std::string & name) const;
   /**
    * Get a Kokkos function in an abstract type
    * @param name The Kokkos function name
@@ -816,6 +827,7 @@ public:
    */
   virtual void
   addDistribution(const std::string & type, const std::string & name, InputParameters & parameters);
+  virtual bool hasDistribution(const std::string & name) const;
   virtual Distribution & getDistribution(const std::string & name);
 
   /**
@@ -1473,6 +1485,14 @@ public:
   bool hasPostprocessorValueByName(const PostprocessorName & name) const;
 
   /**
+   * Return the Postprocessor object registered under the supplied object name.
+   * @param object_name The name of the Postprocessor object
+   * @param tid The thread identifier for thread-local object lookup
+   */
+  const Postprocessor & getPostprocessorObjectByName(const PostprocessorName & object_name,
+                                                     const THREAD_ID tid = 0) const;
+
+  /**
    * Get a read-only reference to the value associated with a Postprocessor that exists.
    * @param name The name of the post-processor
    * @param t_index Flag for getting current (0), old (1), or older (2) values
@@ -1935,6 +1955,9 @@ public:
   }
   virtual std::shared_ptr<DisplacedProblem> getDisplacedProblem() { return _displaced_problem; }
 
+  /**
+   * Update this object's geometric search data as well as the displaced problem's if it exists
+   */
   virtual void updateGeomSearch(
       GeometricSearchData::GeometricSearchType type = GeometricSearchData::ALL) override;
   virtual void updateMortarMesh();
@@ -3328,6 +3351,11 @@ protected:
 
   /// Whether or not checking the state of uo/aux evaluation
   const bool _uo_aux_state_check;
+
+#ifndef NDEBUG
+  /// Whether to check the residual for NaN or Inf values
+  bool _check_residual_for_nans;
+#endif
 
   /// Maximum number of quadrature points used in the problem
   unsigned int _max_qps;

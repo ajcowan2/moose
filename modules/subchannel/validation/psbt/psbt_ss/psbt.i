@@ -8,7 +8,7 @@ mass_flux_in = ${fparse 1e+6 * 16.95 / 3600.}
 P_out = 14.72e6 # Pa
 [QuadSubChannelMesh]
   [sub_channel]
-    type = SCMQuadSubChannelMeshGenerator
+    type = SCMQuadAssemblyMeshGenerator
     nx = 6
     ny = 6
     n_cells = 20
@@ -19,51 +19,41 @@ P_out = 14.72e6 # Pa
     spacer_z = '0.0 0.229 0.457 0.686 0.914 1.143 1.372 1.600 1.829 2.057 2.286 2.515 2.743 2.972 3.200 3.429'
     spacer_k = '0.7 0.4 1.0 0.4 1.0 0.4 1.0 0.4 1.0 0.4 1.0 0.4 1.0 0.4 1.0 0.4'
   []
-
-  [fuel_pins]
-    type = SCMQuadPinMeshGenerator
-    input = sub_channel
-    nx = 6
-    ny = 6
-    n_cells = 20
-    pitch = 0.0126
-    heated_length = 3.658
-  []
 []
 
 [AuxVariables]
   [mdot]
-    block = sub_channel
+    block = subchannel
   []
   [SumWij]
-    block = sub_channel
+    block = subchannel
   []
   [P]
-    block = sub_channel
+    block = subchannel
   []
   [DP]
-    block = sub_channel
+    block = subchannel
   []
   [h]
-    block = sub_channel
+    block = subchannel
   []
   [T]
-    block = sub_channel
+    block = subchannel
   []
   [Tpin]
     block = fuel_pins
   []
   [rho]
-    block = sub_channel
+    block = subchannel
   []
   [mu]
-    block = sub_channel
+    block = subchannel
   []
   [S]
-    block = sub_channel
+    block = subchannel
   []
   [w_perim]
-    block = sub_channel
+    block = subchannel
   []
   [q_prime]
     block = fuel_pins
@@ -80,8 +70,6 @@ P_out = 14.72e6 # Pa
   type = QuadSubChannel1PhaseProblem
   fp = water
   n_blocks = 1
-  beta = 0.08
-  CT = 2.6
   compute_density = true
   compute_viscosity = true
   compute_power = true
@@ -91,9 +79,10 @@ P_out = 14.72e6 # Pa
   staggered_pressure = false
   verbose_subchannel = true
   interpolation_scheme = exponential
-  deformation = true # this flag allows the re-calculation of subchannel geometric parameters based on the dpin value
   friction_closure = 'MATRA'
   pin_HTC_closure = 'Dittus-Boelter'
+  full_output = true
+  mixing_closure ='constant_beta'
 []
 
 [SCMClosures]
@@ -104,18 +93,15 @@ P_out = 14.72e6 # Pa
     type = SCMHTCDittusBoelter
     correction_factor = none
   []
+  [constant_beta]
+    type = SCMMixingConstantBeta
+    beta = 0.08
+    CT = 2.6
+  []
 []
 
 [ICs]
-  [S_IC]
-    type = SCMQuadFlowAreaIC
-    variable = S
-  []
 
-  [w_perim_IC]
-    type = SCMQuadWettedPerimIC
-    variable = w_perim
-  []
 
   [q_prime_IC]
     type = SCMQuadPowerIC
@@ -130,11 +116,6 @@ P_out = 14.72e6 # Pa
     value = ${T_in}
   []
 
-  [Dpin_ic]
-    type = ConstantIC
-    variable = Dpin
-    value = 0.00950
-  []
 
   [P_ic]
     type = ConstantIC

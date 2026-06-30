@@ -11,19 +11,20 @@
 
 #include "MFEMHypreBoomerAMG.h"
 #include "MFEMFESpace.h"
+#include "MFEMProblem.h"
 
 registerMooseObject("MooseApp", MFEMHypreBoomerAMG);
 
 InputParameters
 MFEMHypreBoomerAMG::validParams()
 {
-  InputParameters params = MFEMSolverBase::validParams();
+  InputParameters params = Moose::MFEM::LinearSolverBase::validParams();
   params.addClassDescription("Hypre BoomerAMG solver and preconditioner for the iterative solution "
                              "of MFEM equation systems.");
   params.addParam<mfem::real_t>("l_tol", 1e-5, "Set the relative tolerance.");
   params.addParam<int>("l_max_its", 10000, "Set the maximum number of iterations.");
   params.addParam<int>("print_level", 2, "Set the solver verbosity.");
-  params.addParam<UserObjectName>(
+  params.addParam<MFEMFESpaceName>(
       "fespace", "H1 FESpace to use in HypreBoomerAMG setup for elasticity problems.");
   params.addParam<mfem::real_t>(
       "strength_threshold", 0.25, "HypreBoomerAMG strong threshold. Defaults to 0.25.");
@@ -33,18 +34,25 @@ MFEMHypreBoomerAMG::validParams()
 }
 
 MFEMHypreBoomerAMG::MFEMHypreBoomerAMG(const InputParameters & parameters)
-  : MFEMSolverBase(parameters),
-    _mfem_fespace(isParamSetByUser("fespace") ? getUserObject<MFEMFESpace>("fespace").getFESpace()
-                                              : nullptr)
+  : Moose::MFEM::LinearSolverBase(parameters),
+    _mfem_fespace(
+        isParamSetByUser("fespace")
+            ? getMFEMProblem()
+                  .getMFEMObject<MFEMFESpace>("MFEMFESpace", getParam<MFEMFESpaceName>("fespace"))
+                  .getFESpace()
+            : nullptr)
 {
-  constructSolver();
+  ConstructSolver();
 }
 
+MFEMHypreBoomerAMG::~MFEMHypreBoomerAMG() { _solver.reset(); }
+
 void
-MFEMHypreBoomerAMG::constructSolver()
+MFEMHypreBoomerAMG::ConstructSolver()
 {
   auto solver = std::make_unique<mfem::HypreBoomerAMG>();
 
+  solver->iterative_mode = getParam<bool>("use_initial_guess");
   solver->SetTol(getParam<mfem::real_t>("l_tol"));
   solver->SetMaxIter(getParam<int>("l_max_its"));
   solver->SetPrintLevel(getParam<int>("print_level"));
@@ -58,17 +66,20 @@ MFEMHypreBoomerAMG::constructSolver()
 }
 
 void
-MFEMHypreBoomerAMG::updateSolver(mfem::ParBilinearForm & a, mfem::Array<int> & tdofs)
+MFEMHypreBoomerAMG::SetupLOR(mfem::ParBilinearForm & a, mfem::Array<int> & ess_bdr_markers)
 {
   if (_lor)
   {
-    checkSpectralEquivalence(a);
-    auto lor_solver = new mfem::LORSolver<mfem::HypreBoomerAMG>(a, tdofs);
+    CheckSpectralEquivalence(a);
+    mfem::Array<int> ess_tdofs;
+    a.ParFESpace()->GetEssentialTrueDofs(ess_bdr_markers, ess_tdofs);
+    auto lor_solver = new mfem::LORSolver<mfem::HypreBoomerAMG>(a, ess_tdofs);
     lor_solver->GetSolver().SetTol(getParam<mfem::real_t>("l_tol"));
     lor_solver->GetSolver().SetMaxIter(getParam<int>("l_max_its"));
     lor_solver->GetSolver().SetPrintLevel(getParam<int>("print_level"));
     lor_solver->GetSolver().SetStrengthThresh(getParam<mfem::real_t>("strength_threshold"));
 
+    /// HypreBoomerAMG options for elasticity problems are not compatible with GPU execution
     if (_mfem_fespace && !mfem::HypreUsingGPU())
       lor_solver->GetSolver().SetElasticityOptions(_mfem_fespace.get());
 

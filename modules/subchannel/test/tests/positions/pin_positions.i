@@ -32,7 +32,7 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
 
 [TriSubChannelMesh]
   [subchannel]
-    type = SCMTriSubChannelMeshGenerator
+    type = SCMTriAssemblyMeshGenerator
     nrings = '${fparse n_rings}'
     n_cells = ${n_cells}
     flat_to_flat = '${fparse duct_inside}'
@@ -47,20 +47,9 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
     spacer_k = '0.5 0.5'
   []
 
-  [fuel_pins]
-    type = SCMTriPinMeshGenerator
-    input = subchannel
-    nrings = '${fparse n_rings}'
-    n_cells = ${n_cells}
-    unheated_length_entry = '${fparse length_entry_fuel}'
-    heated_length = '${fparse length_heated_fuel}'
-    unheated_length_exit = '${fparse length_outlet_fuel}'
-    pitch = '${fparse fuel_pin_pitch}'
-  []
-
   [duct]
     type = SCMTriDuctMeshGenerator
-    input = fuel_pins
+    input = subchannel
     nrings = '${fparse n_rings}'
     n_cells = ${n_cells}
     flat_to_flat = '${fparse duct_inside}'
@@ -112,6 +101,9 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
   [ff]
     block = subchannel
   []
+  [HTC]
+    block = subchannel
+  []
   [q_prime]
     block = fuel_pins
   []
@@ -137,7 +129,6 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
   type = TriSubChannel1PhaseProblem
   fp = sodium
   P_out = ${P_out}
-  CT = 1.0
 
   solve = false
 
@@ -164,6 +155,9 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
   # HTC
   pin_HTC_closure = Dittus-Boelter
   duct_HTC_closure = Dittus-Boelter
+
+  # mixing model (beta)
+  mixing_closure = 'cheng_todreas'
 []
 
 [SCMClosures]
@@ -172,6 +166,9 @@ duct_inside = '${fparse duct_outside - 2 * duct_thickness}'
   []
   [Dittus-Boelter]
     type = SCMHTCDittusBoelter
+  []
+  [cheng_todreas]
+    type = SCMMixingChengTodreas
   []
 []
 

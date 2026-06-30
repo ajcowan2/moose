@@ -136,6 +136,16 @@ public:
     return *p;
   }
   template <class T>
+  T & getAction(const std::string & name)
+  {
+    return const_cast<T &>(static_cast<const ActionWarehouse *>(this)->getAction<T>(name));
+  }
+
+  /**
+   * Retrieve a Physics with its name and the desired type.
+   * @param name The action name.
+   */
+  template <class T>
   T * getPhysics(const std::string & name) const
   {
     auto physics = const_cast<T *>(&getAction<T>(name));
@@ -236,7 +246,7 @@ public:
    * This method executes only the actions in the warehouse that satisfy the task
    * passed in.
    */
-  void executeActionsWithAction(const std::string & name);
+  void executeActionsWithAction(const std::string & task_name);
 
   /**
    * This method sets a Boolean which is used to print information about action dependencies

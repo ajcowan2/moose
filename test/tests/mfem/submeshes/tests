@@ -45,25 +45,62 @@
     compute_devices = 'cpu cuda'
     max_parallel = 1
     recover = false
-  []  
+  []
+  [MFEMCoupledCoefficientSource]
+    type = XMLDiff
+    input = magnetostatic.i
+    xmldiff = 'OutputData/MagnetostaticSimplified/Run0/Run0.pvd
+                OutputData/MagnetostaticSimplified/Run0/Cycle000001/proc000000.vtu'
+    cli_args = 'Kernels/inactive=auxvar_source '
+               'Outputs/ParaViewDataCollection/file_base=OutputData/MagnetostaticSimplified '
+               'Outputs/ParaViewDataCollection/scalar_coefficients="electric_potential a_field_curl_mag electric_potential_grad_mag b_field_mag b_field_div" '
+               'Outputs/ParaViewDataCollection/vector_coefficients="a_field_curl electric_potential_grad"'
+    ignored_items = "root['VTKFile']['UnstructuredGrid']['Piece']['PointData']['DataArray'][0]['#text']" # ignore vector potential
+    requirement = 'MOOSE shall have the ability to support source terms defined via functions of coupled variables, and output those functions for visualization.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu cuda'
+    max_parallel = 1
+    recover = false
+  []
   [MFEMGeometryCutTransitionSubMesh]
     design = 'syntax/MFEM/ClosedCoilMagnetostatic.md'
     issues = '#31404'
     type = CSVDiff
     input = av_magnetostatic.i
-    csvdiff = 'OutputData/AVMagnetostaticClosedCoilCSV.csv'    
+    csvdiff = 'OutputData/AVMagnetostaticClosedCoilCSV.csv'
     requirement = 'MOOSE shall have the ability to strongly enforce global topological constraints in MFEM by defining a transition region for variable discontinuities on one side of a cut plane defined in a solid geometry.'
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
     recover = false
     valgrind = heavy
+    min_slots = 2 # memory heavy
+  []
+  [MFEMBoundaryFluxCutTransitionSubMesh]
+    design = 'MFEMVectorBoundaryFluxIntegralPostprocessor.md'
+    issues = '#32851'
+    type = CSVDiff
+    input = av_magnetostatic.i
+    cli_args = 'SubMeshes/inactive="" '
+               'FESpaces/inactive="" '
+               'AuxVariables/inactive="" '
+               'FunctorMaterials/inactive="" '
+               'Transfers/inactive="" '
+               'Postprocessors/inactive="CoilPower" '
+               'Outputs/ReportedPostprocessors/file_base=OutputData/AVMagnetostaticClosedCoilBoundaryFluxCSV'
+    csvdiff = 'OutputData/AVMagnetostaticClosedCoilBoundaryFluxCSV.csv'
+    requirement = 'MOOSE shall have the ability to determine the flux through an internal or external MFEM boundary surface'
+    capabilities = 'mfem'
+    compute_devices = 'cpu cuda'
+    recover = false
+    valgrind = heavy
+    min_slots = 2 # memory heavy
   []
   [MFEMVacuumCutTransitionSubMesh]
     design = 'syntax/MFEM/ClosedCoilMagnetostatic.md'
     issues = '#31404'
     type = CSVDiff
     input = hphi_magnetostatic.i
-    csvdiff = 'OutputData/HPhiMagnetostaticClosedCoilCSV.csv'    
+    csvdiff = 'OutputData/HPhiMagnetostaticClosedCoilCSV.csv'
     requirement = 'MOOSE shall have the ability to strongly enforce global topological constraints in MFEM by defining a transition region for variable discontinuities on one side of a cut plane defined in an exterior vacuum region.'
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
@@ -74,12 +111,26 @@
     issues = '#31404'
     type = CSVDiff
     input = hphi_magnetodynamic.i
-    csvdiff = 'OutputData/HPhiMagnetodynamicClosedCoilCSV.csv'    
+    csvdiff = 'OutputData/HPhiMagnetodynamicClosedCoilCSV.csv'
     requirement = 'MOOSE shall have the ability to apply boundary conditions on boundaries of embedded volumetric subdomains.'
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
     recover = false
     restep = false
     valgrind = heavy
-  []  
+  []
+  [MFEMNLDomainSubMeshBoundary]
+    design = 'MFEMNLCurlCurlKernel.md'
+    issues = '#33003'
+    type = CSVDiff
+    input = nl_hphi_magnetodynamic.i
+    csvdiff = 'OutputData/HPhiMagnetodynamicNLClosedCoilCSV.csv'
+    requirement = 'MOOSE shall have the ability to solve curl-curl problems with highly nonlinear scalar material properties dependend on the curl of the trial variable.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu' # NLCurlCurlKernel not optimised for use on GPU
+    recover = false
+    restep = false
+    valgrind = heavy
+    min_slots = 3 # memory heavy
+  []
 []

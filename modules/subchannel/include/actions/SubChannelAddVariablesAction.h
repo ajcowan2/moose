@@ -11,6 +11,7 @@
 
 #include "Action.h"
 #include "MooseEnum.h"
+#include "MooseTypes.h"
 
 /**
  * Action that adds SubChannel variables needs for the solve
@@ -25,6 +26,9 @@ public:
   virtual void act() override;
 
 protected:
+  /// Add a block-restricted auxiliary variable unless the user already defined it
+  void addAuxVariable(const std::string & var_name, const std::vector<SubdomainName> & blocks);
+
   /// FE family of the aux variables added by this action
   const MooseEnum _fe_family;
   /// FE order of the aux variables added by this action

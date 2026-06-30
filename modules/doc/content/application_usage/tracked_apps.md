@@ -40,15 +40,17 @@ The purpose of these lists is two fold:
 
 ### Materials
 
+- [DiscoFluxM](https://github.com/lanl/DiscoFluxM) - Dislocation Transport-based Crystal Plasticity Material Model
 - [GRIME](https://github.com/shortlab/grime) - The Grand Radiation Informed Microstructural Evolver: Coupled, spatially dependent radiation damage and microstructural evolution
 - [Magpie](https://github.com/idaholab/magpie) - Mesoscale Atomistic Glue Program for Integrated Execution
 - [Pika](https://github.com/idaholab/pika) - Phase-field model for micro-structure evolution of ice
+- [Tardigrade](https://github.com/lanl/tardigrade) - Implementation of the micromorphic continuum theory of Eringen
 
 
 ### Electromagnetics, Plasmas and Additive Manufacturing
 
-- [Apollo](https://github.com/aurora-multiphysics/apollo) - Enabling 3D electromagnetics simulation in MOOSE, using the MFEM FE library.
-- [CRANE](https://crane-plasma-chemistry.readthedocs.io/en/latest/) - Chemical ReAction NEtworks for plasma chemistry and thermochemistry problems.
+- [Apollo](https://github.com/aurora-multiphysics/apollo) - Enabling 3D electromagnetics simulation in MOOSE, using the MFEM FE library
+- [CRANE](https://crane-plasma-chemistry.readthedocs.io/en/latest/) - Chemical ReAction NEtworks for plasma chemistry and thermochemistry problems
 - [Ferret](https://mangerij.github.io/ferret/) - Kernels to implement the time-dependent Landau-Ginzburg theory of phase transitions for simulating ferroelectric materials
 - [MALAMUTE](https://mooseframework.inl.gov/malamute/) - Advanced manufacturing modeling and simulation
 - [Orpheus](https://github.com/aurora-multiphysics/orpheus) - Additional electromagnetics solvers in MOOSE
@@ -59,19 +61,21 @@ The purpose of these lists is two fold:
 ### Chemistry & species transport
 
 - [cats](https://github.com/aladshaw3/cats) - Catalysis And Treatment Simulations (CATS) library for MOOSE
-- [TMAP8](https://mooseframework.inl.gov/TMAP8/) - System-level mass and thermal transport calculations related to tritium migration.
-
+- [TMAP8](https://mooseframework.inl.gov/TMAP8/) - System-level mass and thermal transport calculations related to tritium migration
 
 ### Geomechanics, Ground Flow, and Earth Sciences
 
 - [FalCon](https://github.com/idaholab/falcon) - Fracturing and liquid conservation; geothermal reservoir simulation and analysis code for coupled and fully implicit Thermo-Hydro-Mechanical-Chemical (THMC) geosystems
 - [Redback](https://github.com/pou036/redback) - Rock Mechanics with Dissipative (Thermo-Hydro-Mechanical-Chemical) Feedbacks: joint development between CSIRO and UNSW Australia
+- [TIGER](https://github.com/MGK-Lab/tiger) - Thermo-Hydro-Mechanical-Chemical sImulator for GEoscience Research, developed by Karlsruhe Institute of Technology
 
 
 ### Miscellaneous
 
+- [canary](https://github.com/aurora-multiphysics/canary) - Repository for storing tested UKAEA MOOSE demonstration problems, examples, and associated documentation
 - [moopy](https://github.com/aurora-multiphysics/moopy) - Python interface that simplifies (ish) the creation of MOOSE inputs
-- [Proteus](https://github.com/aurora-multiphysics/proteus) - For developing Fusion Digital Twins.
+- [Phoenix](https://github.com/rnpratoori/phoenix) - Polymer-to-HOst Evolution via INterface eXchange is a reaction-diffusion based framework to study the evolution of polymer scaffold into a neotissue under various conditions
+- [Proteus](https://github.com/aurora-multiphysics/proteus) - For developing Fusion Digital Twins
 - [Ranger](https://github.com/idaholab/ranger) - Python-based auto-response bot that uses the GitHub API and LlamaIndex package to monitor and generate relevant responses for new discussions
 - [Virtual Test Bed](https://mooseframework.inl.gov/virtual_test_bed/) - An open repository of simulations of nuclear systems
 - [Isopod](https://github.com/idaholab/isopod) - Multiphysics PDE constrained optimization, mostly merged into MOOSE as the optimization module
@@ -89,7 +93,7 @@ These applications require a license. Many of them can be obtained through the [
 - [Grizzly](https://inlsoftware.inl.gov/product/grizzly) - Nuclear Plant Component Degradation Modeling
 - [MARMOT](https://inlsoftware.inl.gov/product/marmot) - Nuclear materials phase field and mechanics application
 - [PRONGHORN](https://inlsoftware.inl.gov/product/pronghorn) - Transient prismatic and pebble bed reactor analysis code
-- [RELAP7](https://inlsoftware.inl.gov/product/relap7) - Next Generation nuclear reactor system safety analysis code (compressible flow)
+- [RELAP-7](https://inlsoftware.inl.gov/product/relap-7) - Next Generation nuclear reactor system safety analysis code (compressible flow)
 - [SAM](https://www.anl.gov/nse/system-analysis-module) - Advanced nuclear reactor system analysis code (weakly-compressible flow), developed at ANL
 - [Sockeye](https://inlsoftware.inl.gov/product/sockeye) - Multi-fidelity studies of heat pipes for nuclear applications
 - SWIFT - A thermo-chemistry tool for metal hydride moderators, developed at LANL
@@ -106,8 +110,10 @@ Combined applications
 - Mixcoatl$^{TM}$ - Conjugate heat transfer in microreactors, developed at BWXT
 - MONARCH - Radiation damage modeling in semiconductors, developed at LANL
 - GOLEM - Numerical simulator for modelling coupled Thermo-Hydro-Mechanical processes in faulted geothermal reservoirs, developed at GFZ Postdam
+- Fizzy - Couples FISPACT-II to MOOSE and Cardinal for radiation activation calculations
 - [Okami](https://hpcgitlab.hpc.inl.gov/idaholab/okami/) - Mixed Oxide fuel studies
-
+- [BEEs](https://yznkxjs.xml-journal.net/en/article/doi/10.7538/yzk.2020.youxian.0515) - PWR fuel performance analysis code
+- [PHOENIX](https://www.sciencedirect.com/science/article/pii/S0306454924001920) - Helicoidal cruciform fuel performance analysis code
 
 ## Legacy software
 
@@ -122,7 +128,7 @@ Reactor Physics
 
 Materials, solid mechanics and fuel performance
 
-- [Crow](https://github.com/SudiptaBiswas/Crow) - MOOSE-based mesoscale simulations for solid-state sintering.
+- [Crow](https://github.com/SudiptaBiswas/Crow) - MOOSE-based mesoscale simulations for solid-state sintering
 - [DGOSPREY](https://github.com/aladshaw3/dgosprey) - Discontinuous Galerkin Off-gas SeParation and REcoverY model: joint development between INL and GIT
 - [HOGNOSE](https://github.com/shortlab/hognose) - CASL's mesoscale corrosion/oxidation code
 - [Hyrax](https://github.com/UMThorntonGroup/Hyrax) - Zirconium hydride precipitation and growth in LWR nuclear fuel cladding
@@ -131,10 +137,10 @@ Materials, solid mechanics and fuel performance
 Plasma and fusion sciences
 
 - [Achlys](https://github.com/aurora-multiphysics/achlys) - Macroscopic tritium transport processes through fusion materials
+- [Platypus](https://github.com/aurora-multiphysics/platypus) - A MOOSE-based app to enable finite element problem setup using the MFEM FE library
 
 Fluid dynamics and Thermal hydraulics
 
-- [barnacle](https://github.com/idaholab/barnacle) - Shallow water equations in MOOSE
 - [MAMBA](https://github.com/shortlab/mamba) - MOOSE port of the still maintained non-MOOSE MAMBA CASL code for boiling, heat transfer, and chemistry in porous media
 
 Miscellaneous
@@ -144,12 +150,13 @@ Miscellaneous
 
 ### Closed source
 
+- [barnacle](https://github.com/idaholab/barnacle) - Shallow water equations in MOOSE
 - BIGHORN - Compressible fluid dynamics code
 - ELK - Former application for the electromagnetics module
 - FENIX - Advanced fission reactor multiphysics simulation suite with Griffin and Pronghorn, notably to model Xenon and Samarium fission product transients
 - MAMMOTH - Reactor physics application
-- OSPREY - Off-gas SeParation and REcoverY for dispersed plug flow in a packed bed.
-- RAT - Reactive transport problems in subsurface porous media that involves coupled physical processes of fluid flow, solute transport, biogeochemical reactions and media-solution interactions.
+- OSPREY - Off-gas SeParation and REcoverY for dispersed plug flow in a packed bed
+- RAT - Reactive transport problems in subsurface porous media that involves coupled physical processes of fluid flow, solute transport, biogeochemical reactions and media-solution interactions
 - RATTLESNAKE - FEM Diffusion, SN, and PN code
 - YAK - Common object library for INL particle transport codes
 - YellowJacket - Nuclear reactor coolant chemistry
