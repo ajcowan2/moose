@@ -75,6 +75,8 @@
 #include "FVScalarLagrangeMultiplierConstraint.h"
 #include "FVBoundaryScalarLagrangeMultiplierConstraint.h"
 #include "FVFluxKernel.h"
+#include "FVBoundaryCondition.h"
+#include "FVInterfaceKernel.h"
 #include "FVScalarLagrangeMultiplierInterface.h"
 #include "GeneralUserObject.h"
 #include "OffDiagonalScalingMatrix.h"
@@ -102,6 +104,7 @@
 #include "libmesh/petsc_solver_exception.h"
 
 #include <ios>
+#include <type_traits>
 
 #include "petscsnes.h"
 #include <PetscDMMoose.h>
@@ -110,6 +113,31 @@ extern PetscErrorCode DMCreate_Moose(DM);
 EXTERN_C_END
 
 using namespace libMesh;
+
+namespace
+{
+template <typename T>
+void
+appendFVSetupObjects(TheWarehouse & warehouse,
+                     const std::string & system_name,
+                     const unsigned int system_number,
+                     const THREAD_ID tid,
+                     std::vector<SetupInterface *> & results)
+{
+  static_assert(std::is_base_of_v<MooseObject, T>);
+  static_assert(std::is_base_of_v<SetupInterface, T>);
+
+  std::vector<T *> objects;
+  warehouse.query()
+      .template condition<AttribSystem>(system_name)
+      .template condition<AttribSysNum>(system_number)
+      .template condition<AttribThread>(tid)
+      .queryInto(objects);
+
+  for (auto * object : objects)
+    results.push_back(object);
+}
+}
 
 NonlinearSystemBase::NonlinearSystemBase(FEProblemBase & fe_problem,
                                          System & sys,
@@ -199,7 +227,7 @@ NonlinearSystemBase::preInit()
     _residual_copy->init(_sys.n_dofs(), false, SERIAL);
 
 #ifdef MOOSE_KOKKOS_ENABLED
-  if (_fe_problem.hasKokkosObjects())
+  if (_fe_problem.hasKokkosResidualObjects())
     _sys.get_dof_map().full_sparsity_pattern_needed();
 #endif
 }
@@ -220,6 +248,23 @@ NonlinearSystemBase::turnOffJacobian()
 {
   system().set_basic_system_only();
   nonlinearSolver()->jacobian = NULL;
+}
+
+std::vector<SetupInterface *>
+NonlinearSystemBase::getFVSetupObjects(THREAD_ID tid)
+{
+  std::vector<SetupInterface *> fv_objects;
+  auto & warehouse = _fe_problem.theWarehouse();
+
+  appendFVSetupObjects<FVElementalKernel>(
+      warehouse, "FVElementalKernel", number(), tid, fv_objects);
+  appendFVSetupObjects<FVFluxKernel>(warehouse, "FVFluxKernel", number(), tid, fv_objects);
+  appendFVSetupObjects<FVBoundaryCondition>(warehouse, "FVDirichletBC", number(), tid, fv_objects);
+  appendFVSetupObjects<FVBoundaryCondition>(warehouse, "FVFluxBC", number(), tid, fv_objects);
+  appendFVSetupObjects<FVInterfaceKernel>(
+      warehouse, "FVInterfaceKernel", number(), tid, fv_objects);
+
+  return fv_objects;
 }
 
 void
@@ -246,27 +291,8 @@ NonlinearSystemBase::initialSetup()
       _integrated_bcs.initialSetup(tid);
 
       if (_fe_problem.haveFV())
-      {
-        std::vector<FVElementalKernel *> fv_elemental_kernels;
-        _fe_problem.theWarehouse()
-            .query()
-            .template condition<AttribSystem>("FVElementalKernel")
-            .template condition<AttribThread>(tid)
-            .queryInto(fv_elemental_kernels);
-
-        for (auto * fv_kernel : fv_elemental_kernels)
-          fv_kernel->initialSetup();
-
-        std::vector<FVFluxKernel *> fv_flux_kernels;
-        _fe_problem.theWarehouse()
-            .query()
-            .template condition<AttribSystem>("FVFluxKernel")
-            .template condition<AttribThread>(tid)
-            .queryInto(fv_flux_kernels);
-
-        for (auto * fv_kernel : fv_flux_kernels)
-          fv_kernel->initialSetup();
-      }
+        for (auto * fv_object : getFVSetupObjects(tid))
+          fv_object->initialSetup();
     }
 
     _scalar_kernels.initialSetup();
@@ -291,8 +317,7 @@ NonlinearSystemBase::initialSetup()
     {
       // go over mortar interfaces and construct functors
       const auto & mortar_interfaces = _fe_problem.getMortarInterfaces(displaced);
-      for (const auto & [primary_secondary_boundary_pair, mortar_generation_ptr] :
-           mortar_interfaces)
+      for (const auto & [primary_secondary_boundary_pair, interface_config] : mortar_interfaces)
       {
         if (!_constraints.hasActiveMortarConstraints(primary_secondary_boundary_pair, displaced))
           continue;
@@ -309,7 +334,7 @@ NonlinearSystemBase::initialSetup()
 
         mortar_functors.emplace(primary_secondary_boundary_pair,
                                 ComputeMortarFunctor(mortar_constraints,
-                                                     *mortar_generation_ptr,
+                                                     *interface_config.amg,
                                                      subproblem,
                                                      _fe_problem,
                                                      displaced,
@@ -351,35 +376,8 @@ NonlinearSystemBase::timestepSetup()
     _integrated_bcs.timestepSetup(tid);
 
     if (_fe_problem.haveFV())
-    {
-      std::vector<FVFluxBC *> bcs;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVFluxBC")
-          .template condition<AttribThread>(tid)
-          .queryInto(bcs);
-
-      std::vector<FVInterfaceKernel *> iks;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVInterfaceKernel")
-          .template condition<AttribThread>(tid)
-          .queryInto(iks);
-
-      std::vector<FVFluxKernel *> kernels;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVFluxKernel")
-          .template condition<AttribThread>(tid)
-          .queryInto(kernels);
-
-      for (auto * bc : bcs)
-        bc->timestepSetup();
-      for (auto * ik : iks)
-        ik->timestepSetup();
-      for (auto * kernel : kernels)
-        kernel->timestepSetup();
-    }
+      for (auto * fv_object : getFVSetupObjects(tid))
+        fv_object->timestepSetup();
   }
   _scalar_kernels.timestepSetup();
   _constraints.timestepSetup();
@@ -414,35 +412,8 @@ NonlinearSystemBase::customSetup(const ExecFlagType & exec_type)
     _integrated_bcs.customSetup(exec_type, tid);
 
     if (_fe_problem.haveFV())
-    {
-      std::vector<FVFluxBC *> bcs;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVFluxBC")
-          .template condition<AttribThread>(tid)
-          .queryInto(bcs);
-
-      std::vector<FVInterfaceKernel *> iks;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVInterfaceKernel")
-          .template condition<AttribThread>(tid)
-          .queryInto(iks);
-
-      std::vector<FVFluxKernel *> kernels;
-      _fe_problem.theWarehouse()
-          .query()
-          .template condition<AttribSystem>("FVFluxKernel")
-          .template condition<AttribThread>(tid)
-          .queryInto(kernels);
-
-      for (auto * bc : bcs)
-        bc->customSetup(exec_type);
-      for (auto * ik : iks)
-        ik->customSetup(exec_type);
-      for (auto * kernel : kernels)
-        kernel->customSetup(exec_type);
-    }
+      for (auto * fv_object : getFVSetupObjects(tid))
+        fv_object->customSetup(exec_type);
   }
   _scalar_kernels.customSetup(exec_type);
   _constraints.customSetup(exec_type);
@@ -1954,7 +1925,7 @@ NonlinearSystemBase::computeResidualInternal(const std::set<TagID> & tags)
     _residual_ghosted->close();
   }
 
-  PARALLEL_TRY { computeDiracContributions(tags, false); }
+  PARALLEL_TRY { computeDiracContributions(tags, {}, Moose::ComputeType::Residual); }
   PARALLEL_CATCH;
 
   if (_fe_problem._has_constraints)
@@ -1994,6 +1965,28 @@ NonlinearSystemBase::computeResidualAndJacobianInternal(const std::set<TagID> & 
                                                         const std::set<TagID> & matrix_tags)
 {
   TIME_SECTION("computeResidualAndJacobianInternal", 3);
+
+  // These residual objects are only computed in the separate residual/Jacobian paths. Erroring
+  // here prevents them from being silently dropped, which would produce wrong answers
+  if (_scalar_kernels.hasActiveObjects())
+    mooseDocumentedError("moose",
+                         33531,
+                         "residual_and_jacobian_together does not yet support ScalarKernels. Their "
+                         "contributions would be silently dropped. Please use "
+                         "residual_and_jacobian_together = false");
+  if (_nodal_kernels.hasActiveBlockObjects() || _nodal_kernels.hasActiveBoundaryObjects())
+    mooseDocumentedError("moose",
+                         33531,
+                         "residual_and_jacobian_together does not yet support NodalKernels. Their "
+                         "contributions would be silently dropped. Please use "
+                         "residual_and_jacobian_together = false");
+  if (_constraints.hasActiveNodalConstraints())
+    mooseDocumentedError(
+        "moose",
+        33531,
+        "residual_and_jacobian_together does not yet support nodal constraints. Their "
+        "contributions would be silently dropped. Please use "
+        "residual_and_jacobian_together = false");
 
   // Make matrix ready to use
   activateAllMatrixTags();
@@ -2085,6 +2078,13 @@ NonlinearSystemBase::computeResidualAndJacobianInternal(const std::set<TagID> & 
       _fe_problem.addCachedResidual(i);
       _fe_problem.addCachedJacobian(i);
     }
+  }
+  PARALLEL_CATCH;
+
+  // residual and Jacobian contributions from DiracKernels, computed together in a single pass
+  PARALLEL_TRY
+  {
+    computeDiracContributions(vector_tags, matrix_tags, Moose::ComputeType::ResidualAndJacobian);
   }
   PARALLEL_CATCH;
 }
@@ -2571,6 +2571,10 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
               {
                 constraints_applied = true;
 
+                // Begin the diagonal node-face constraint accumulation phase for neighbor Jacobian
+                // blocks.
+                _fe_problem.prepareAssemblyNeighbor(0);
+
                 nfc->prepareShapes(nfc->variable().number());
                 nfc->prepareNeighborShapes(nfc->variable().number());
 
@@ -2635,8 +2639,10 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
                           nfc->variable().number(), jvar->number(), this->number()))
                     continue;
 
-                  // Need to zero out the matrices first
+                  // Begin the off-diagonal node-face constraint accumulation phase for
+                  // element and neighbor Jacobian blocks.
                   _fe_problem.prepareAssembly(0);
+                  _fe_problem.prepareAssemblyNeighbor(0);
 
                   nfc->prepareShapes(nfc->variable().number());
                   nfc->prepareNeighborShapes(jvar->number());
@@ -2750,6 +2756,11 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
           _fe_problem.setNeighborSubdomainID(elem2, tid);
           subproblem.reinitNeighborPhys(elem2, info._elem2_constraint_q_point, tid);
 
+          // Begin the element-element constraint accumulation phase for element and neighbor
+          // Jacobian blocks.
+          _fe_problem.prepareAssembly(tid);
+          _fe_problem.prepareAssemblyNeighbor(tid);
+
           ec->prepareShapes(ec->variable().number());
           ec->prepareNeighborShapes(ec->variable().number());
 
@@ -2794,9 +2805,6 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
             // This reinits the variables that exist on the secondary node
             _fe_problem.reinitNodeFace(&secondary_node, secondary_id, 0);
 
-            // This will set aside residual and jacobian space for the variables that have dofs
-            // on the secondary node
-            _fe_problem.prepareAssembly(0);
             _fe_problem.reinitOffDiagScalars(0);
 
             for (const auto & nec : constraints)
@@ -2804,6 +2812,11 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
               if (nec->shouldApply())
               {
                 constraints_applied = true;
+
+                // Begin the diagonal node-element constraint accumulation phase for
+                // element and neighbor Jacobian blocks.
+                _fe_problem.prepareAssembly(0);
+                _fe_problem.prepareAssemblyNeighbor(0);
 
                 nec->_jacobian = &jacobian_to_view;
                 nec->prepareShapes(nec->variable().number());
@@ -2851,8 +2864,10 @@ NonlinearSystemBase::constraintJacobians(const SparseMatrix<Number> & jacobian_t
                           nec->variable().number(), jvar->number(), this->number()))
                     continue;
 
-                  // Need to zero out the matrices first
+                  // Begin the off-diagonal node-element constraint accumulation phase for
+                  // element and neighbor Jacobian blocks.
                   _fe_problem.prepareAssembly(0);
+                  _fe_problem.prepareAssemblyNeighbor(0);
 
                   nec->prepareShapes(nec->variable().number());
                   nec->prepareNeighborShapes(jvar->number());
@@ -3168,7 +3183,7 @@ NonlinearSystemBase::computeJacobianInternal(const std::set<TagID> & tags)
       break;
     }
 
-    computeDiracContributions(tags, true);
+    computeDiracContributions({}, tags, Moose::ComputeType::Jacobian);
 
     static bool first = true;
 
@@ -3509,7 +3524,9 @@ NonlinearSystemBase::computeDamping(const NumericVector<Number> & solution,
 }
 
 void
-NonlinearSystemBase::computeDiracContributions(const std::set<TagID> & tags, bool is_jacobian)
+NonlinearSystemBase::computeDiracContributions(const std::set<TagID> & vector_tags,
+                                               const std::set<TagID> & matrix_tags,
+                                               const Moose::ComputeType compute_type)
 {
   _fe_problem.clearDiracInfo();
 
@@ -3530,7 +3547,7 @@ NonlinearSystemBase::computeDiracContributions(const std::set<TagID> & tags, boo
       }
     }
 
-    ComputeDiracThread cd(_fe_problem, tags, is_jacobian);
+    ComputeDiracThread cd(_fe_problem, vector_tags, matrix_tags, compute_type);
 
     _fe_problem.getDiracElements(dirac_elements);
 
@@ -3540,7 +3557,13 @@ NonlinearSystemBase::computeDiracContributions(const std::set<TagID> & tags, boo
 
     cd(range);
 
-    if (is_jacobian)
+    // AD DiracKernels computing the residual and Jacobian together cache their residual
+    // contributions (via addResidualsAndJacobian), so those must be flushed too
+    if (compute_type != Moose::ComputeType::Jacobian)
+      for (const auto tid : make_range(libMesh::n_threads()))
+        _fe_problem.addCachedResidual(tid);
+
+    if (compute_type != Moose::ComputeType::Residual)
       for (const auto tid : make_range(libMesh::n_threads()))
         _fe_problem.addCachedJacobian(tid);
   }

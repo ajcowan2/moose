@@ -31,15 +31,16 @@ public:
   Moose::MFEM::CoefficientManager coefficients;
 
   std::unique_ptr<mfem::ODESolver> ode_solver{nullptr};
-  mfem::BlockVector f;
+  /// Persistent true-DoF solution vector backing trial grid functions after problem operator init.
+  mfem::BlockVector true_solution;
 
   std::shared_ptr<Moose::MFEM::EquationSystem> eqn_system{nullptr};
   std::shared_ptr<Moose::MFEM::NonlinearSolverBase> nonlinear_solver{nullptr};
-
   std::shared_ptr<Moose::MFEM::LinearSolverBase> jacobian_solver{nullptr};
 
   Moose::MFEM::FECollections fecs;
   Moose::MFEM::FESpaces fespaces;
+  Moose::MFEM::FESpaceHierarchies fespace_hierarchies;
   Moose::MFEM::GridFunctions gridfunctions;
   Moose::MFEM::TimeDerivativeMap time_derivative_map;
   Moose::MFEM::ComplexGridFunctions cmplx_gridfunctions;

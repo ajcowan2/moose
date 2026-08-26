@@ -18,7 +18,6 @@ mixed and nonlinear forms) and build methods
 */
 class ComplexEquationSystem : public EquationSystem
 {
-
 public:
   ComplexEquationSystem() = default;
   ~ComplexEquationSystem() = default;
@@ -104,7 +103,7 @@ public:
       NamedFieldsMap<NamedFieldsMap<std::vector<std::shared_ptr<MFEMComplexIntegratedBC>>>> &
           integrated_bc_map);
 
-  virtual bool Complex() const override { return true; }
+  bool IsComplex() const override { return true; }
 
 protected:
   // Complex Linear and Bilinear Forms

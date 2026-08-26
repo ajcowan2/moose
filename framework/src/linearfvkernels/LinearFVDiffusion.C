@@ -169,8 +169,7 @@ LinearFVDiffusion::computeFluxRHSContribution()
 Real
 LinearFVDiffusion::computeBoundaryMatrixContribution(const LinearFVBoundaryCondition & bc)
 {
-  const auto * const diff_bc = static_cast<const LinearFVAdvectionDiffusionBC *>(&bc);
-  mooseAssert(diff_bc, "This should be a valid BC!");
+  const auto * const diff_bc = libMesh::cast_ptr<const LinearFVAdvectionDiffusionBC *>(&bc);
 
   auto grad_contrib = diff_bc->computeBoundaryGradientMatrixContribution() * _current_face_area;
   // If the boundary condition does not include the diffusivity contribution then
@@ -204,7 +203,7 @@ LinearFVDiffusion::computeBoundaryRHSContribution(const LinearFVBoundaryConditio
   // This should only be used for BCs where the gradient of the value is computed and
   // not prescribed.
 
-  if (_use_nonorthogonal_correction && diff_bc->useBoundaryGradientExtrapolation())
+  if (_use_nonorthogonal_correction && diff_bc->needsBoundaryNonorthogonalCorrection())
   {
     // We support internal boundaries as well. In that case we have to decide on which side
     // of the boundary we are on.

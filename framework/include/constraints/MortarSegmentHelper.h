@@ -9,13 +9,22 @@
 
 #pragma once
 
+#include "MortarSegmentInfo.h"
+
 #include "libmesh/point.h"
 #include "libmesh/int_range.h"
 
+#include <array>
+#include <optional>
+#include <string>
 #include <vector>
 
 using libMesh::Point;
 using libMesh::Real;
+
+#ifdef MOOSE_UNIT_TEST
+class MortarSegmentHelperTest;
+#endif
 
 /**
  * This class supports defining mortar segment mesh elements in 3D by projecting secondary and
@@ -26,9 +35,24 @@ using libMesh::Real;
 class MortarSegmentHelper
 {
 public:
-  MortarSegmentHelper(const std::vector<Point> secondary_nodes,
+  /**
+   * Construct a helper that generates mortar segment geometry only.
+   */
+  MortarSegmentHelper(std::vector<Point> secondary_nodes,
                       const Point & center,
-                      const Point & normal);
+                      const Point & normal,
+                      const MortarSegmentTriangulationMode triangulation_mode,
+                      const bool triangulate_triangles);
+
+  /**
+   * Construct a helper that also tracks secondary parent-reference coordinates.
+   */
+  MortarSegmentHelper(std::vector<Point> secondary_nodes,
+                      std::vector<Point> secondary_reference_points,
+                      const Point & center,
+                      const Point & normal,
+                      const MortarSegmentTriangulationMode triangulation_mode,
+                      const bool triangulate_triangles);
 
   /**
    * Computes the intersection between line segments defined by point pairs (p1,p2) and (q1,q2)
@@ -49,19 +73,27 @@ public:
   bool isDisjoint(const std::vector<Point> & poly) const;
 
   /**
+   * Project a primary polygon into the helper plane while preserving the clipping orientation.
+   */
+  std::vector<Point> projectPrimaryPoly(const std::vector<Point> & primary_nodes) const;
+
+  /**
    * Clip secondary element (defined in instantiation) against given primary polygon
    * result is a set of 2D nodes defining clipped polygon
    */
   std::vector<Point> clipPoly(const std::vector<Point> & primary_nodes) const;
 
   /**
-   * Triangulate a polygon (currently uses center of polygon to define triangulation)
-   * @param poly_nodes List of 2D nodes defining polygon
-   * @param offset Current size of 3D nodes array (not poly_nodes)
-   * @return tri_map List of integer arrays defining which nodes belong to each triangle
+   * Triangulate a polygon according to the configured mortar-segment triangulation mode.
+   * @param poly_nodes List of 2D nodes defining polygon. May be augmented with extra interior
+   *                   nodes (e.g. centroid) by triangulation modes that require them; callers
+   *                   should append the result to their nodes list before applying the offset
+   *                   to \p tri_map.
+   * @param tri_map Output triangle list expressed in indices local to \p poly_nodes (i.e. starting
+   *                at 0). Callers are responsible for shifting these indices into the global node
+   *                numbering.
    */
   void triangulatePoly(std::vector<Point> & poly_nodes,
-                       const unsigned int offset,
                        std::vector<std::vector<unsigned int>> & tri_map) const;
 
   /**
@@ -75,6 +107,19 @@ public:
                          std::vector<std::vector<unsigned int>> & elem_to_nodes);
 
   /**
+   * Get mortar segments and aligned parent-reference coordinates by appending to the output
+   * containers. Segments below \p minimum_segment_area are removed before mapping; retained
+   * vertices must map uniquely.
+   */
+  void getMortarSegments(const std::vector<Point> & primary_nodes,
+                         const std::vector<Point> & primary_reference_points,
+                         std::vector<Point> & nodes,
+                         std::vector<std::vector<unsigned int>> & elem_to_nodes,
+                         std::vector<std::array<Point, 3>> & elem_to_secondary_reference_points,
+                         std::vector<std::array<Point, 3>> & elem_to_primary_reference_points,
+                         Real minimum_segment_area = 0.);
+
+  /**
    * Compute area of polygon
    */
   Real area(const std::vector<Point> & nodes) const;
@@ -83,6 +128,11 @@ public:
    * Get center point of secondary element
    */
   const Point & center() const { return _center; }
+
+  /**
+   * Get the unit normal of the projection plane.
+   */
+  const Point & normal() const { return _normal; }
 
   /**
    * Get area fraction remaining after clipping against primary elements
@@ -99,12 +149,47 @@ public:
 
 private:
   /**
+   * Output containers and filtering data used while generating reference-coordinate mappings.
+   */
+  struct ReferenceMappingData
+  {
+    const std::vector<Point> & primary_reference_points;
+    std::vector<std::array<Point, 3>> & elem_to_secondary_reference_points;
+    std::vector<std::array<Point, 3>> & elem_to_primary_reference_points;
+    Real minimum_segment_area;
+  };
+
+  void getMortarSegmentsImpl(const std::vector<Point> & primary_nodes,
+                             std::vector<Point> & nodes,
+                             std::vector<std::vector<unsigned int>> & elem_to_nodes,
+                             ReferenceMappingData * reference_mapping);
+
+  /**
+   * Clip an already projected primary polygon against the secondary polygon. Keeping projection
+   * separate preserves the ordering shared with primary reference points.
+   */
+  std::vector<Point> clipProjectedPoly(const std::vector<Point> & primary_poly) const;
+
+  /**
+   * Recover a parent-reference point from a projected sub-element map.
+   * @return No value for invalid or out-of-tolerance maps.
+   */
+  std::optional<Point> referencePoint(const Point & point,
+                                      const std::vector<Point> & poly,
+                                      const std::vector<Point> & reference_points,
+                                      std::string * failure_reason = nullptr) const;
+
+#ifdef MOOSE_UNIT_TEST
+  friend class MortarSegmentHelperTest;
+#endif
+
+  /**
    * Geometric center of secondary element
    */
   Point _center;
 
   /**
-   * Normal at geometric center of secondary element
+   * Unit normal of the plane used to project and clip the linearized secondary subpatch.
    */
   Point _normal;
 
@@ -133,6 +218,16 @@ private:
   Real _tolerance = 1e-8;
 
   /**
+   * Triangulation mode used for clipped polygons.
+   */
+  const MortarSegmentTriangulationMode _triangulation_mode;
+
+  /**
+   * Whether already-triangular polygons should still be centroid-subdivided.
+   */
+  const bool _triangulate_triangles;
+
+  /**
    * Tolerance times secondary area for dimensional consistency
    */
   Real _area_tol;
@@ -146,4 +241,7 @@ private:
    * List of projected points on the linearized secondary element
    */
   std::vector<Point> _secondary_poly;
+
+  /// Parent reference points corresponding to _secondary_poly.
+  std::vector<Point> _secondary_reference_points;
 };

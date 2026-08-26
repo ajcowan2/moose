@@ -91,7 +91,7 @@ CircularBoundaryCorrectionGenerator::generate()
   // Check if the input mesh has the given boundaries
   for (const auto & bd : _input_mesh_circular_boundaries)
   {
-    if (!MooseMeshUtils::hasBoundaryName(*input_mesh, bd))
+    if (!MooseMeshUtils::hasBoundaryNameOrID(*input_mesh, bd))
       paramError("input_mesh_circular_boundaries",
                  "the boundary '" + bd + "' does not exist in the input mesh.");
   }
@@ -180,7 +180,7 @@ CircularBoundaryCorrectionGenerator::generate()
 
     // Check if the boundary is a full circle or partial
     // Also make an ordered array of nodes
-    Real dummy_max_rad;
+    Real dummy_max_rad = 0;
     std::vector<dof_id_type> ordered_node_list;
     bool is_bdry_closed;
     FillBetweenPointVectorsTools::isClosedLoop(*input_mesh,

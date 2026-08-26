@@ -92,7 +92,7 @@ MultiAppNearestNodeTransfer::execute()
     if (_from_meshes.size())
     {
       const auto & sb = getParam<BoundaryName>("source_boundary");
-      if (!MooseMeshUtils::hasBoundaryName(_from_meshes[0]->getMesh(), sb))
+      if (!MooseMeshUtils::hasBoundaryNameOrID(_from_meshes[0]->getMesh(), sb))
         paramError("source_boundary", "The boundary '", sb, "' was not found in the mesh");
 
       bboxes = getFromBoundingBoxes(_from_meshes[0]->getBoundaryID(sb));
@@ -274,11 +274,11 @@ MultiAppNearestNodeTransfer::execute()
                   outgoing_qps[i_proc].push_back(point);
                   local_elems_found.insert(elem);
                 } // if distance
-              }   // for i_from
-            }     // for i_proc
+              } // for i_from
+            } // for i_proc
             offset++;
           } // point
-        }   // for elem
+        } // for elem
 
         // Verify that we found at least one candidate bounding
         // box for each local element with dofs for the current
@@ -639,8 +639,8 @@ MultiAppNearestNodeTransfer::execute()
                 _cached_from_inds[std::make_pair(i_to, point_id)] = pid;
                 _cached_qp_inds[std::make_pair(i_to, point_id)] = qp_ind;
               } // if _fixed_meshes
-            }   // i_from
-          }     //
+            } // i_from
+          } //
           else
           {
             best_val = incoming_evals[_cached_from_inds[std::make_pair(i_to, point_id)]]
@@ -725,7 +725,7 @@ MultiAppNearestNodeTransfer::getLocalEntitiesAndComponents(
   {
     const auto & sb = getParam<BoundaryName>("source_boundary");
     BoundaryID src_bnd_id = mesh->getBoundaryID(sb);
-    if (!MooseMeshUtils::hasBoundaryName(mesh_base, sb))
+    if (!MooseMeshUtils::hasBoundaryNameOrID(mesh_base, sb))
       paramError("source_boundary", "The boundary '", sb, "' was not found in the mesh");
 
     if (is_nodal)
@@ -819,7 +819,7 @@ MultiAppNearestNodeTransfer::getTargetLocalNodes(const unsigned int to_problem_i
     const std::vector<BoundaryName> & target_boundaries =
         getParam<std::vector<BoundaryName>>("target_boundary");
     for (const auto & b : target_boundaries)
-      if (!MooseMeshUtils::hasBoundaryName(to_mesh, b))
+      if (!MooseMeshUtils::hasBoundaryNameOrID(to_mesh, b))
         paramError("target_boundary", "The boundary '", b, "' was not found in the mesh");
 
     ConstBndNodeRange & bnd_nodes = *(_to_meshes[to_problem_id])->getBoundaryNodeRange();

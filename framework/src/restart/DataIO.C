@@ -21,6 +21,7 @@
 #include "libmesh/petsc_vector.h"
 #include "libmesh/enum_solver_package.h"
 #include "libmesh/petsc_solver_exception.h"
+#include "libmesh/bounding_box.h"
 
 using namespace libMesh;
 
@@ -219,6 +220,33 @@ dataStore(std::ostream & stream, std::stringstream & s, void * /* context */)
   stream.write(s_str.c_str(), sizeof(char) * (s_str.size()));
 }
 
+#ifdef MOOSE_LIBTORCH_ENABLED
+template <>
+void
+dataStore(std::ostream & stream, torch::Tensor & t, void * context)
+{
+  const auto tensor = LibtorchUtils::toCPUContiguous(t);
+  mooseAssert(tensor.scalar_type() == at::kDouble,
+              "Restart storage currently supports only double tensors.");
+
+  auto rank = cast_int<unsigned int>(tensor.dim());
+  dataStore(stream, rank, nullptr);
+  for (unsigned int dim = 0; dim < rank; ++dim)
+  {
+    auto size = cast_int<unsigned int>(tensor.sizes()[dim]);
+    dataStore(stream, size, nullptr);
+  }
+
+  const auto flattened = tensor.reshape({tensor.numel()});
+  const auto t_accessor = flattened.accessor<Real, 1>();
+  for (int64_t i = 0; i < flattened.numel(); ++i)
+  {
+    Real r = t_accessor[i];
+    dataStore(stream, r, context);
+  }
+}
+#endif
+
 template <typename T>
 void
 dataStore(std::ostream & stream, TensorValue<T> & v, void * context)
@@ -273,10 +301,13 @@ void
 dataStore(std::ostream & stream, Point & p, void * context)
 {
   for (const auto i : make_range(Moose::dim))
-  {
-    Real r = p(i);
-    dataStore(stream, r, context);
-  }
+    dataStore(stream, p(i), context);
+}
+
+void
+dataStore(std::ostream & stream, libMesh::BoundingBox & bbox, void * context)
+{
+  storeHelper(stream, static_cast<std::pair<Point, Point> &>(bbox), context);
 }
 
 template <>
@@ -555,6 +586,34 @@ dataLoad(std::istream & stream, std::stringstream & s, void * /* context */)
   s.write(s_s.get(), s_size);
 }
 
+#ifdef MOOSE_LIBTORCH_ENABLED
+template <>
+void
+dataLoad(std::istream & stream, torch::Tensor & t, void * context)
+{
+  unsigned int rank = 0;
+  dataLoad(stream, rank, nullptr);
+
+  std::vector<int64_t> sizes(rank);
+  for (unsigned int dim = 0; dim < rank; ++dim)
+  {
+    unsigned int size = 0;
+    dataLoad(stream, size, nullptr);
+    sizes[dim] = size;
+  }
+
+  t = torch::empty(sizes, at::kDouble);
+  auto flattened = t.reshape({t.numel()});
+  auto t_accessor = flattened.accessor<Real, 1>();
+  for (int64_t i = 0; i < flattened.numel(); ++i)
+  {
+    Real r = 0;
+    dataLoad(stream, r, context);
+    t_accessor[i] = r;
+  }
+}
+#endif
+
 template <typename T>
 void
 dataLoad(std::istream & stream, TensorValue<T> & v, void * context)
@@ -614,11 +673,13 @@ void
 dataLoad(std::istream & stream, Point & p, void * context)
 {
   for (const auto i : make_range(Moose::dim))
-  {
-    Real r = 0;
-    dataLoad(stream, r, context);
-    p(i) = r;
-  }
+    dataLoad(stream, p(i), context);
+}
+
+void
+dataLoad(std::istream & stream, libMesh::BoundingBox & bbox, void * context)
+{
+  loadHelper(stream, static_cast<std::pair<Point, Point> &>(bbox), context);
 }
 
 template <>

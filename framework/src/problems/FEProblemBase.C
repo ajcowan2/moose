@@ -245,6 +245,11 @@ FEProblemBase::validParams()
                         "Set to false to disable checking of boundary restricted elemental object "
                         "variable dependencies, e.g. are the variable dependencies defined on the "
                         "selected boundaries?");
+  params.addParam<bool>(
+      "side_uo_interface_mat_prop_integrity_check",
+      true,
+      "Set to false to disable checking that side user objects do not consume material "
+      "properties declared by interface materials on the same boundary.");
   MooseEnum material_coverage_check_modes("FALSE TRUE OFF ON SKIP_LIST ONLY_LIST", "TRUE");
   params.addParam<MooseEnum>(
       "material_coverage_check",
@@ -373,7 +378,8 @@ FEProblemBase::validParams()
   params.addParamNamesToGroup(
       "skip_nl_system_check kernel_coverage_check kernel_coverage_block_list "
       "boundary_restricted_node_integrity_check "
-      "boundary_restricted_elem_integrity_check material_coverage_check "
+      "boundary_restricted_elem_integrity_check "
+      "side_uo_interface_mat_prop_integrity_check material_coverage_check "
       "material_coverage_block_list fv_bcs_integrity_check "
       "material_dependency_check check_uo_aux_state error_on_jacobian_nonzero_reallocation",
       "Simulation checks");
@@ -480,6 +486,8 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
     _previous_nl_solution_required(getParam<bool>("previous_nl_solution_required")),
     _previous_multiapp_fp_nl_solution_required(_num_nl_sys + _num_linear_sys, false),
     _previous_multiapp_fp_aux_solution_required(false),
+    _previous_multisystem_fp_nl_solution_required(_num_nl_sys + _num_linear_sys, false),
+    _previous_multisystem_fp_aux_solution_required(false),
     _has_nonlocal_coupling(false),
     _calculate_jacobian_in_uo(false),
     _kernel_coverage_check(
@@ -489,6 +497,8 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
         getParam<bool>("boundary_restricted_node_integrity_check")),
     _boundary_restricted_elem_integrity_check(
         getParam<bool>("boundary_restricted_elem_integrity_check")),
+    _side_uo_interface_mat_prop_integrity_check(
+        getParam<bool>("side_uo_interface_mat_prop_integrity_check")),
     _material_coverage_check(
         getParam<MooseEnum>("material_coverage_check").getEnum<CoverageCheckMode>()),
     _material_coverage_blocks(getParam<std::vector<SubdomainName>>("material_coverage_block_list")),
@@ -1176,7 +1186,10 @@ FEProblemBase::initialSetup()
       TIME_SECTION("ICinitialSetup", 5, "Setting Up Initial Conditions");
 
       for (THREAD_ID tid = 0; tid < n_threads; tid++)
+      {
         _ics.initialSetup(tid);
+        _fv_ics.initialSetup(tid);
+      }
 
       _scalar_ics.initialSetup();
     }
@@ -1249,7 +1262,7 @@ FEProblemBase::initialSetup()
 
 #ifdef LIBMESH_ENABLE_AMR
 
-  if (!_app.isRecovering())
+  if (!_app.isRecovering() && !_app.restoredInitialBackupMesh())
   {
     unsigned int n = adaptivity().getInitialSteps();
     if (n && !_app.isUltimateMaster() && _app.isRestarting())
@@ -1929,12 +1942,22 @@ FEProblemBase::prepareAssembly(const THREAD_ID tid)
   if (_has_nonlocal_coupling)
     _assembly[tid][_current_nl_sys->number()]->prepareNonlocal();
 
-  if (_displaced_problem && (_reinit_displaced_elem || _reinit_displaced_face))
+  if (_displaced_problem &&
+      (_reinit_displaced_elem || _reinit_displaced_face || _reinit_displaced_neighbor))
   {
     _displaced_problem->prepareAssembly(tid);
     if (_has_nonlocal_coupling)
       _displaced_problem->prepareNonlocal(tid);
   }
+}
+
+void
+FEProblemBase::prepareAssemblyNeighbor(const THREAD_ID tid)
+{
+  _assembly[tid][_current_nl_sys->number()]->prepareNeighbor();
+
+  if (_displaced_problem && (_reinit_displaced_face || _reinit_displaced_neighbor))
+    _displaced_problem->prepareAssemblyNeighbor(tid);
 }
 
 void
@@ -5471,8 +5494,7 @@ FEProblemBase::computeUserObjectsInternal(const ExecFlagType & type, TheWarehous
         {
           // go over mortar interfaces and construct functors
           const auto & mortar_interfaces = getMortarInterfaces(displaced);
-          for (const auto & [primary_secondary_boundary_pair, mortar_generation_ptr] :
-               mortar_interfaces)
+          for (const auto & [primary_secondary_boundary_pair, interface_config] : mortar_interfaces)
           {
             auto mortar_uos_to_execute =
                 getMortarUserObjects(primary_secondary_boundary_pair.first,
@@ -5484,7 +5506,7 @@ FEProblemBase::computeUserObjectsInternal(const ExecFlagType & type, TheWarehous
                                           ? static_cast<SubProblem *>(_displaced_problem.get())
                                           : static_cast<SubProblem *>(this);
             MortarUserObjectThread muot(mortar_uos_to_execute,
-                                        *mortar_generation_ptr,
+                                        *interface_config.amg,
                                         *subproblem,
                                         *this,
                                         displaced,
@@ -6700,13 +6722,13 @@ FEProblemBase::areCoupled(const unsigned int ivar,
   return (*_cm[nl_sys])(ivar, jvar);
 }
 
-std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
+std::vector<std::pair<MooseVariableFieldBase *, MooseVariableFieldBase *>> &
 FEProblemBase::couplingEntries(const THREAD_ID tid, const unsigned int nl_sys)
 {
   return _assembly[tid][nl_sys]->couplingEntries();
 }
 
-std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
+std::vector<std::pair<MooseVariableFieldBase *, MooseVariableFieldBase *>> &
 FEProblemBase::nonlocalCouplingEntries(const THREAD_ID tid, const unsigned int nl_sys)
 {
   return _assembly[tid][nl_sys]->nonlocalCouplingEntries();
@@ -7943,6 +7965,13 @@ FEProblemBase::computeJacobianTags(const std::set<TagID> & tags)
         {
           computeSystems(EXEC_PRE_DISPLACE);
           _displaced_problem->updateMesh();
+          // A standalone scaling Jacobian is assembled without a preceding residual evaluation, so
+          // the displaced mortar segment mesh can be stale relative to the just-updated displaced
+          // parent mesh. Every other Jacobian evaluation is preceded by a residual (or combined
+          // residual/Jacobian) evaluation that already rebuilt the mortar mesh, so doing it here in
+          // the general case would be duplicative.
+          if (_current_nl_sys->computingScalingJacobian() && _mortar_data->hasDisplacedObjects())
+            updateMortarMesh();
         }
 
         for (unsigned int tid = 0; tid < n_threads; tid++)
@@ -8394,7 +8423,11 @@ FEProblemBase::createMortarInterface(
     bool periodic,
     const bool debug,
     const bool correct_edge_dropping,
-    const Real minimum_projection_angle)
+    const Real minimum_projection_angle,
+    const Mortar3DSubpatchPlane mortar_3d_subpatch_plane,
+    const MooseEnum & triangulation,
+    const bool triangulate_triangles,
+    const Mortar3DQuadraturePointMapping mortar_3d_qp_mapping)
 {
   _has_mortar = true;
 
@@ -8406,7 +8439,11 @@ FEProblemBase::createMortarInterface(
                                                periodic,
                                                debug,
                                                correct_edge_dropping,
-                                               minimum_projection_angle);
+                                               minimum_projection_angle,
+                                               mortar_3d_subpatch_plane,
+                                               triangulation,
+                                               triangulate_triangles,
+                                               mortar_3d_qp_mapping);
   else
     return _mortar_data->createMortarInterface(primary_secondary_boundary_pair,
                                                primary_secondary_subdomain_pair,
@@ -8415,7 +8452,11 @@ FEProblemBase::createMortarInterface(
                                                periodic,
                                                debug,
                                                correct_edge_dropping,
-                                               minimum_projection_angle);
+                                               minimum_projection_angle,
+                                               mortar_3d_subpatch_plane,
+                                               triangulation,
+                                               triangulate_triangles,
+                                               mortar_3d_qp_mapping);
 }
 
 const AutomaticMortarGeneration &
@@ -8662,6 +8703,8 @@ FEProblemBase::meshChanged(const bool intermediate_change,
                            const bool clean_refinement_flags)
 {
   TIME_SECTION("meshChanged", 3, "Handling Mesh Changes");
+
+  _app.markMeshChangedForBackup();
 
   if (_material_props.hasStatefulProperties() || _bnd_material_props.hasStatefulProperties() ||
       _neighbor_material_props.hasStatefulProperties())
@@ -9425,6 +9468,32 @@ FEProblemBase::needsPreviousMultiAppFixedPointIterationAuxiliary() const
   return _previous_multiapp_fp_aux_solution_required;
 }
 
+void
+FEProblemBase::needsPreviousMultiSystemFixedPointIterationSolution(
+    bool needed, const unsigned int solver_sys_num)
+{
+  _previous_multisystem_fp_nl_solution_required[solver_sys_num] = needed;
+}
+
+bool
+FEProblemBase::needsPreviousMultiSystemFixedPointIterationSolution(
+    const unsigned int solver_sys_num) const
+{
+  return _previous_multisystem_fp_nl_solution_required[solver_sys_num];
+}
+
+void
+FEProblemBase::needsPreviousMultiSystemFixedPointIterationAuxiliary(bool state)
+{
+  _previous_multisystem_fp_aux_solution_required = state;
+}
+
+bool
+FEProblemBase::needsPreviousMultiSystemFixedPointIterationAuxiliary() const
+{
+  return _previous_multisystem_fp_aux_solution_required;
+}
+
 bool
 FEProblemBase::hasJacobian() const
 {
@@ -10052,8 +10121,7 @@ FEProblemBase::checkNonlocalCouplingRequirement() const
   return _requires_nonlocal_coupling;
 }
 
-const std::unordered_map<std::pair<BoundaryID, BoundaryID>,
-                         std::unique_ptr<AutomaticMortarGeneration>> &
+const std::unordered_map<std::pair<BoundaryID, BoundaryID>, MortarInterfaceConfig> &
 FEProblemBase::getMortarInterfaces(bool on_displaced) const
 {
   return _mortar_data->getMortarInterfaces(on_displaced);

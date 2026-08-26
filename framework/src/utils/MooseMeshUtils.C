@@ -124,26 +124,29 @@ getBoundaryIDs(const MeshBase & mesh,
   const std::map<BoundaryID, std::string> & sideset_map = boundary_info.get_sideset_name_map();
   const std::map<BoundaryID, std::string> & nodeset_map = boundary_info.get_nodeset_name_map();
 
-  BoundaryID max_boundary_local_id = 0;
   /* It is required to generate a new ID for a given name. It is used often in mesh modifiers such
    * as SideSetsBetweenSubdomains. Then we need to check the current boundary ids since they are
    * changing during "mesh modify()", and figure out the right max boundary ID. Most of mesh
    * modifiers are running in serial, and we won't involve a global communication.
    */
+  BoundaryID max_boundary_id = 0;
   if (generate_unknown)
   {
-    const auto & bids = mesh.is_prepared() ? mesh.get_boundary_info().get_global_boundary_ids()
-                                           : mesh.get_boundary_info().get_boundary_ids();
-    max_boundary_local_id = bids.empty() ? 0 : *(bids.rbegin());
-    /* We should not hit this often */
-    if (!mesh.is_prepared() && !mesh.is_serial())
-      mesh.comm().max(max_boundary_local_id);
+    bool has_boundary_id_sets = mesh.preparation().has_boundary_id_sets;
+
+    // Ideally, this requirement should be able to be enforced earlier when we
+    // get the name maps. However, that preparedness check on sideset and
+    // nodeset maps doesn't exist yet.
+    if (!has_boundary_id_sets)
+      libmesh_parallel_only(mesh.comm());
+
+    const auto & bids = has_boundary_id_sets ? boundary_info.get_global_boundary_ids()
+                                             : boundary_info.get_boundary_ids();
+    if (bids.size())
+      max_boundary_id = *(bids.rbegin());
+    if (!has_boundary_id_sets)
+      mesh.comm().max(max_boundary_id);
   }
-
-  BoundaryID max_boundary_id = mesh_boundary_ids.empty() ? 0 : *(mesh_boundary_ids.rbegin());
-
-  max_boundary_id =
-      max_boundary_id > max_boundary_local_id ? max_boundary_id : max_boundary_local_id;
 
   std::vector<BoundaryID> ids(boundary_name.size());
   for (const auto i : index_range(boundary_name))
@@ -563,10 +566,18 @@ hasBoundaryID(const MeshBase & input_mesh, const BoundaryID id)
 }
 
 bool
-hasBoundaryName(const MeshBase & input_mesh, const BoundaryName & name)
+hasBoundaryName(const MeshBase & mesh, const BoundaryName & name)
 {
-  const auto id = getBoundaryID(name, input_mesh);
-  return hasBoundaryID(input_mesh, id);
+  const BoundaryInfo & boundary_info = mesh.get_boundary_info();
+  const BoundaryID id = boundary_info.get_id_by_name(name);
+  return id != Moose::INVALID_BOUNDARY_ID;
+}
+
+bool
+hasBoundaryNameOrID(const MeshBase & mesh, const BoundaryName & name_or_id)
+{
+  const auto id = getBoundaryID(name_or_id, mesh);
+  return hasBoundaryID(mesh, id);
 }
 
 void
@@ -1037,7 +1048,7 @@ createSubdomainFromSidesets(MeshBase & mesh,
 
   // Check that the sidesets are present in the mesh
   for (const auto & sideset : boundary_names)
-    if (!MooseMeshUtils::hasBoundaryName(mesh, sideset))
+    if (!MooseMeshUtils::hasBoundaryNameOrID(mesh, sideset))
       mooseException("The sideset '", sideset, "' was not found within the mesh");
 
   auto sideset_ids = MooseMeshUtils::getBoundaryIDs(mesh, boundary_names, true);
@@ -1152,7 +1163,7 @@ createSubdomainFromSidesets(MeshBase & mesh,
 
   // Assign block name, if provided
   if (new_subdomain_name.size())
-    mesh.subdomain_name(new_block_id) = new_subdomain_name;
+    mesh.set_subdomain_name(new_block_id, new_subdomain_name);
 
   const bool skip_partitioning_old = mesh.skip_partitioning();
   mesh.skip_partitioning(true);
@@ -1240,7 +1251,7 @@ convertBlockToMesh(MeshBase & source_mesh,
 
   // Move subdomain names
   for (const auto sbd_id : target_block_ids)
-    target_mesh.subdomain_name(sbd_id) = source_mesh.subdomain_name(sbd_id);
+    target_mesh.set_subdomain_name(sbd_id, source_mesh.subdomain_name(sbd_id));
 }
 
 void

@@ -66,6 +66,7 @@ class RelationshipManager;
 class ReporterData;
 class SolutionInvalidity;
 class MultiApp;
+class MooseMesh;
 #ifdef MOOSE_MFEM_ENABLED
 class MFEMProblemSolve;
 #endif
@@ -739,6 +740,31 @@ public:
   std::unique_ptr<Backup> backup();
 
   /**
+   * Whether this app has an initial Backup object with mesh checkpoint entries.
+   */
+  bool hasInitialBackupMesh() const;
+
+  /**
+   * Whether this app has restored mesh topology from its initial Backup object.
+   */
+  bool restoredInitialBackupMesh() const { return _restored_initial_backup_mesh; }
+
+  /**
+   * Mark this app as requiring mesh topology data in its next Backup object.
+   */
+  void markMeshChangedForBackup() { _mesh_changed_for_backup = true; }
+
+  /**
+   * Whether this app requires mesh topology data in its next Backup object.
+   */
+  bool meshChangedForBackup() const { return _mesh_changed_for_backup; }
+
+  /**
+   * Restore \p mesh from this app's initial Backup object and consume the mesh checkpoint entries.
+   */
+  void restoreMeshFromInitialBackup(MooseMesh & mesh);
+
+  /**
    * Insertion point for other apps that is called before backup()
    */
   virtual void preBackup() {}
@@ -1390,7 +1416,7 @@ protected:
   std::shared_ptr<libMesh::ExodusII_IO> _ex_reader;
 
   /// This variable indicates that DistributedMesh should be used for the libMesh mesh underlying MooseMesh.
-  bool _distributed_mesh_on_command_line;
+  const bool _distributed_mesh_on_command_line;
 
   /// Whether or not this is a recovery run
   bool _recover;
@@ -1422,7 +1448,7 @@ protected:
   std::map<std::string, unsigned int> _output_file_numbers;
 
   /// true if we want to just check the input file
-  bool _check_input;
+  const bool _check_input;
 
   /// The relationship managers that have been added
   std::set<std::shared_ptr<RelationshipManager>> _relationship_managers;
@@ -1606,9 +1632,18 @@ private:
    * Handles the --citations command-line option: registers with PETSc the BibTeX entries that
    * should be cited for the framework and the modules/objects used in this simulation, and enables
    * PETSc's -citations option. PETSc prints them (together with its own and its sub-packages'
-   * citations) at PetscFinalize, to the console or to a file if one was given.
+   * citations) at PetscFinalize, to the console or to a file if one was given. The collected set
+   * spans this app and, recursively, every MultiApp subapp, and is gathered across all MPI ranks
+   * (PETSc prints from rank 0 alone), so attribution is complete for multi-app runs.
    */
   void requestCitations();
+
+  /**
+   * Collects the BibTeX citations for the modules/objects constructed in this app and the finite
+   * element backend it uses, then recurses into every MultiApp subapp to do the same. The map is
+   * keyed by BibTeX key so a citation shared across apps is folded in only once.
+   */
+  void collectCitations(std::map<std::string, std::string> & citations) const;
 
   /**
    * Internal method for adding a capability.
@@ -1639,10 +1674,10 @@ private:
   std::unique_ptr<TheWarehouse> _the_warehouse;
 
   /// Level of multiapp, the master is level 0. This used by the Console to indent output
-  unsigned int _multiapp_level;
+  const unsigned int _multiapp_level;
 
   /// Numbering in all the sub-apps on the same level
-  unsigned int _multiapp_number;
+  const unsigned int _multiapp_number;
 
   /// Whether to use the parent app mesh for this app
   const bool _use_master_mesh;
@@ -1696,6 +1731,12 @@ private:
   /// This is a pointer to a pointer because at the time of construction of the app,
   /// the backup will not be filled yet.
   std::unique_ptr<Backup> * const _initial_backup;
+
+  /// Whether mesh topology has been restored from the initial Backup object.
+  bool _restored_initial_backup_mesh = false;
+
+  /// Whether mesh topology has changed and should be included in Backup objects.
+  bool _mesh_changed_for_backup = false;
 
 #ifdef MOOSE_LIBTORCH_ENABLED
   /// The libtorch device this app is using (converted from compute_device)

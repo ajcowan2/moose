@@ -37,6 +37,10 @@ make -j$MOOSE_JOBS
 make install
 ```
 
+!alert note title=autogen.sh script
+To run this script, you need autoconf, automake and libtool installed. You can `conda install autoconf automake libtool`
+if they are not installed.
+
 After this, gperftools is installed under +$HOME/gperftools/installed+ that you can let the environmental variable +GPERF_DIR+ point to.
 You could install gperftools in a different folder if desired.
 
@@ -110,7 +114,7 @@ MOOSE_PROFILE_BASE environment variable to a file base used to store the profili
 data.  Performing profiling run might look something like this:
 
 ```
-MOOSE_PROFILE_BASE=run1_ mpiexec -n 32 ./your-app_oprof -i input_file.i
+MOOSE_PROFILE_BASE=run1_ mpiexec -n 32 ./your-app_oprof -i input_file.i --no-timing
 ```
 
 This will use the filename base you pass and append a suffix of the form
@@ -122,6 +126,9 @@ argument `--gperf-profiler-on` with a comma-separated list of MPI ranks to gener
 the profiling files only on the selected ranks. For example `--gperf-profiler-on 0,2`
 with the above MOOSE_PROFILE_BASE will generate `run1_0.prof` and `run1_2.prof`.
 If this argument is not given, files of all ranks will be generated.
+
+!alert note
+Disabling the perf graph with `--no-timing` often leads to clearer profiles.
 
 ### Heap Profiling
 
@@ -277,6 +284,11 @@ ROUTINE ======================== Assembly::reinit in /home/calsrw/animals/moose/
          .      230ms   1649:  computeCurrentElemVolume();
       20ms       20ms   1650:}
 ```
+
+!alert note title="No source information" error on MacOS
+If you receive a "No source information" error when using `list` on a routine, try to
+create the symbolization manually using `dsymutil ~/projects/moose/framework/libmoose-oprof.0.dylib`.
+If you are not building moose in `~/projects/moose`, you will need to adapt this path.
 
 ## Instruments (MacOS)
 

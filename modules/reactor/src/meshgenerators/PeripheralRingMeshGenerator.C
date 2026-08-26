@@ -164,7 +164,7 @@ PeripheralRingMeshGenerator::generate()
 
   _input_mesh_external_bid =
       MooseMeshUtils::getBoundaryID(_input_mesh_external_boundary, *input_mesh);
-  if (!MooseMeshUtils::hasBoundaryName(*input_mesh, _input_mesh_external_boundary))
+  if (!MooseMeshUtils::hasBoundaryNameOrID(*input_mesh, _input_mesh_external_boundary))
     paramError("input_mesh_external_boundary",
                "External boundary does not exist in the input mesh");
   // We check the element types of input mesh's external boundary here.
@@ -467,7 +467,7 @@ PeripheralRingMeshGenerator::generate()
 
   // Assign subdomain name to the new block if applicable
   if (isParamValid("peripheral_ring_block_name"))
-    input_mesh->subdomain_name(_peripheral_ring_block_id) = _peripheral_ring_block_name;
+    input_mesh->set_subdomain_name(_peripheral_ring_block_id, _peripheral_ring_block_name, true);
   // Assign customized external boundary id
   if (_external_boundary_id > 0)
     MooseMesh::changeBoundaryId(*input_mesh, OUTER_SIDESET_ID, _external_boundary_id, false);

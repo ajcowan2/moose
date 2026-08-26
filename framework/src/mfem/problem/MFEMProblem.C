@@ -16,16 +16,45 @@
 #include "MFEMFunctorMaterial.h"
 #include "MFEMExecutedObject.h"
 #include "MFEMVectorUtils.h"
+#include "MFEMFESpaceHierarchy.h"
+#include "Postprocessor.h"
+#include "VectorPostprocessor.h"
+#include "MFEMNonlinearSolverBase.h"
+#include "DependencyResolver.h"
+#include "MooseUtils.h"
+#include "DataIO.h"
+
 #include "libmesh/string_to_enum.h"
 
 #include <vector>
 #include <algorithm>
 #include <map>
-#include <set>
 #include <deque>
 #include <sstream>
 
 registerMooseObject("MooseApp", MFEMProblem);
+
+namespace
+{
+std::vector<MFEMSolverName>
+getMFEMSolverDependencies(const InputParameters & parameters)
+{
+  std::vector<MFEMSolverName> dependencies;
+
+  for (const auto & [param_name, _] : parameters)
+  {
+    if (parameters.isPrivate(param_name))
+      continue;
+
+    if (auto * name = parameters.queryParam<MFEMSolverName>(param_name))
+      dependencies.push_back(*name);
+    else if (auto * names = parameters.queryParam<std::vector<MFEMSolverName>>(param_name))
+      dependencies.insert(dependencies.end(), names->begin(), names->end());
+  }
+
+  return dependencies;
+}
+}
 
 InputParameters
 MFEMProblem::validParams()
@@ -40,7 +69,10 @@ MFEMProblem::validParams()
 }
 
 MFEMProblem::MFEMProblem(const InputParameters & params)
-  : ExternalProblem(params), _num_type{static_cast<int>(getParam<MooseEnum>("numeric_type"))}
+  : ExternalProblem(params),
+    _num_type{static_cast<int>(getParam<MooseEnum>("numeric_type"))},
+    _solution_state_data(declareRestartableDataWithContext<Moose::MFEM::SolutionState>(
+        "mfem_solution_state", &_problem_data))
 {
   // Initialise Hypre for all MFEM problems.
   mfem::Hypre::Init();
@@ -57,12 +89,14 @@ MFEMProblem::initialSetup()
 {
   ExternalProblem::initialSetup();
 
-  // MFEM indicators create their estimators during addIndicator(); markers still need an explicit
-  // setup pass because they are no longer initialized through the libMesh/MOOSE user-object path.
-  std::vector<MFEMRefinementMarker *> markers;
-  theWarehouse().query().condition<AttribSystem>("Marker").queryInto(markers);
-  for (auto marker : markers)
-    marker->initialSetup();
+  std::vector<MFEMExecutedObject *> objects;
+  theWarehouse()
+      .query()
+      .condition<AttribSystem>("MFEMExecutedObject")
+      .condition<AttribThread>(0)
+      .queryInto(objects);
+  for (auto * const object : objects)
+    object->initialSetup();
 }
 
 void
@@ -85,66 +119,118 @@ MFEMProblem::setMesh()
 }
 
 void
-MFEMProblem::addMFEMPreconditioner(const std::string & user_object_name,
-                                   const std::string & name,
-                                   InputParameters & parameters)
-{
-  addObject<Moose::MFEM::SolverBase>(user_object_name, name, parameters);
-}
-
-void
-MFEMProblem::addIndicator(const std::string & user_object_name,
+MFEMProblem::addIndicator(const std::string & indicator_type,
                           const std::string & name,
                           InputParameters & parameters)
 {
-  auto estimator = addObject<MFEMIndicator>(user_object_name, name, parameters).front();
+  auto estimator = addObject<MFEMIndicator>(indicator_type, name, parameters).front();
 
   // construct the estimator itself
   estimator->createEstimator();
 }
 
 void
-MFEMProblem::addMarker(const std::string & user_object_name,
+MFEMProblem::addMarker(const std::string & marker_type,
                        const std::string & name,
                        InputParameters & parameters)
 {
-  getProblemData().refiner =
-      addObject<MFEMRefinementMarker>(user_object_name, name, parameters).front();
+  getProblemData().refiner = addObject<MFEMRefinementMarker>(marker_type, name, parameters).front();
 }
 
 void
-MFEMProblem::addMFEMSolver(const std::string & user_object_name,
+MFEMProblem::addMFEMSolver(const std::string & solver_type,
                            const std::string & name,
                            InputParameters & parameters)
 {
-  auto object = addObject<Moose::MFEM::SolverBase>(user_object_name, name, parameters).front();
-  auto & problem_data = getProblemData();
+  mooseAssert(!_mfem_solver_definitions.count(name), "Multiple MFEM solvers named '" + name + "'.");
+  _mfem_solver_definitions.emplace(name, MFEMSolverDefinition{solver_type, &parameters});
+}
 
-  if (auto lin_solver = std::dynamic_pointer_cast<Moose::MFEM::LinearSolverBase>(object))
+void
+MFEMProblem::resolveMFEMSolvers()
+{
+  if (_mfem_solver_definitions.empty())
+    return;
+
+  DependencyResolver<std::string> resolver;
+
+  for (auto & [solver_name, definition] : _mfem_solver_definitions)
   {
-    if (problem_data.jacobian_solver)
-      mooseError("Multiple linear solvers provided. '",
-                 problem_data.jacobian_solver->name(),
-                 "' and '",
-                 lin_solver->name(),
-                 "'");
-    problem_data.jacobian_solver = lin_solver;
+    const auto dependencies = getMFEMSolverDependencies(*definition.parameters);
+    if (dependencies.empty())
+      resolver.addNode(solver_name);
+
+    for (const auto & dependency_name : dependencies)
+    {
+      auto dependency_it = _mfem_solver_definitions.find(dependency_name);
+      if (dependency_it == _mfem_solver_definitions.end())
+        mooseError("MFEM solver '",
+                   solver_name,
+                   "' references MFEM solver '",
+                   dependency_name,
+                   "', but no solver with that name was provided in the [Solvers] block.");
+
+      dependency_it->second.referenced = true;
+      resolver.addEdge(dependency_name, solver_name);
+    }
   }
-  else if (auto nonlinear_solver =
-               std::dynamic_pointer_cast<Moose::MFEM::NonlinearSolverBase>(object);
-           nonlinear_solver)
+
+  const std::vector<std::string> * sorted_solver_names = nullptr;
+  try
   {
-    if (problem_data.nonlinear_solver)
-      mooseError("Multiple nonlinear solvers provided. '",
-                 problem_data.nonlinear_solver->name(),
-                 "' and '",
-                 nonlinear_solver->name(),
-                 "'");
-    problem_data.nonlinear_solver = nonlinear_solver;
+    sorted_solver_names = &resolver.getSortedValues();
   }
-  else
-    mooseError(
-        "Unsupported MFEM solver object type '", user_object_name, "' for solver '", name, "'.");
+  catch (CyclicDependencyException<std::string> & e)
+  {
+    mooseError("Cyclic MFEM solver dependency detected: ",
+               MooseUtils::join(e.getCyclicDependencies(), " <- "));
+  }
+
+  auto & problem_data = getProblemData();
+  mooseAssert(!problem_data.jacobian_solver, "MFEM linear solver driver already assigned");
+  mooseAssert(!problem_data.nonlinear_solver, "MFEM nonlinear solver driver already assigned");
+
+  for (const auto & solver_name : *sorted_solver_names)
+  {
+    auto & definition = libmesh_map_find(_mfem_solver_definitions, solver_name);
+    auto solver =
+        addObject<Moose::MFEM::SolverBase>(definition.type, solver_name, *definition.parameters)
+            .front();
+
+    if (definition.referenced)
+      continue;
+
+    if (auto lin_solver = std::dynamic_pointer_cast<Moose::MFEM::LinearSolverBase>(solver))
+    {
+      if (problem_data.jacobian_solver)
+        mooseError("Multiple MFEM linear solver drivers provided. '",
+                   problem_data.jacobian_solver->name(),
+                   "' and '",
+                   lin_solver->name(),
+                   "' are not referenced by another MFEM solver.");
+      problem_data.jacobian_solver = lin_solver;
+    }
+    else if (auto nonlinear_solver =
+                 std::dynamic_pointer_cast<Moose::MFEM::NonlinearSolverBase>(solver);
+             nonlinear_solver)
+    {
+      if (problem_data.nonlinear_solver)
+        mooseError("Multiple MFEM nonlinear solver drivers provided. '",
+                   problem_data.nonlinear_solver->name(),
+                   "' and '",
+                   nonlinear_solver->name(),
+                   "' are not referenced by another MFEM solver.");
+      problem_data.nonlinear_solver = nonlinear_solver;
+    }
+    else
+      mooseError("Unsupported MFEM solver object type '",
+                 solver->type(),
+                 "' for solver '",
+                 solver->name(),
+                 "'.");
+  }
+
+  _mfem_solver_definitions.clear();
 }
 
 void
@@ -225,6 +311,12 @@ MFEMProblem::addFESpace(const std::string & type,
                         const std::string & name,
                         InputParameters & parameters)
 {
+  if (getProblemData().fespace_hierarchies.Has(name))
+    mooseError("Cannot add FESpace '",
+               name,
+               "': an MFEMFESpaceHierarchy with the same name already exists. "
+               "FESpaces and FESpaceHierarchies share the fespaces namespace.");
+
   auto & mfem_fespace = *addObject<MFEMFESpace>(type, name, parameters).front();
 
   // Register fespace and associated fe collection.
@@ -233,10 +325,48 @@ MFEMProblem::addFESpace(const std::string & type,
 }
 
 void
+MFEMProblem::addFESpaceHierarchy(const std::string & type,
+                                 const std::string & name,
+                                 InputParameters & parameters)
+{
+  if (getProblemData().fespaces.Has(name))
+    mooseError("Cannot add MFEMFESpaceHierarchy '",
+               name,
+               "': a FESpace with the same name already exists. "
+               "FESpaces and FESpaceHierarchies share the fespaces namespace.");
+
+  auto hierarchy_obj = addObject<MFEMFESpaceHierarchy>(type, name, parameters).front();
+  auto hierarchy_shared = hierarchy_obj->getHierarchyShared();
+  // Register the hierarchy for co-ownership by solvers.
+  getProblemData().fespace_hierarchies.Register(name, hierarchy_shared);
+  // Register the finest-level FESpace in fespaces under the hierarchy name so that
+  // variables can say `fespace = <hierarchy_name>` without a separate FESpace definition.
+  // The aliasing shared_ptr keeps the hierarchy alive as long as this entry lives.
+  auto finest = std::shared_ptr<mfem::ParFiniteElementSpace>(
+      hierarchy_shared, &hierarchy_obj->getHierarchy().GetFinestFESpace());
+  getProblemData().fespaces.Register(name, finest);
+}
+
+void
+MFEMProblem::validateVariableNumericType(const std::string & var_type,
+                                         const std::string & var_name) const
+{
+  const bool variable_is_complex = var_type == "MFEMComplexVariable";
+  const bool problem_is_complex = _num_type == NumericType::COMPLEX;
+  if (variable_is_complex != problem_is_complex)
+    paramError("numeric_type",
+               "The problem numeric type does not match primary MFEM variable '",
+               var_name,
+               "', which is ",
+               variable_is_complex ? "complex." : "real.");
+}
+
+void
 MFEMProblem::addVariable(const std::string & var_type,
                          const std::string & var_name,
                          InputParameters & parameters)
 {
+  validateVariableNumericType(var_type, var_name);
   addGridFunction(var_type, var_name, parameters);
   // MOOSE variables store DoFs for the trial variable and its time derivatives up to second order;
   // MFEM GridFunctions store data for only one set of DoFs each, so we must add additional
@@ -658,6 +788,15 @@ MFEMProblem::addSubMesh(const std::string & var_type,
   auto & mfem_submesh = *addObject<MFEMSubMesh>(var_type, var_name, parameters).front();
   // Register submesh.
   getProblemData().submeshes.Register(var_name, mfem_submesh.getSubMesh());
+}
+
+void
+MFEMProblem::addQuadratureFunction(const std::string & type,
+                                   const std::string & name,
+                                   InputParameters & parameters)
+{
+  // The object declares its coefficient with the CoefficientManager on construction.
+  addObject<MFEMObject>(type, name, parameters);
 }
 
 void

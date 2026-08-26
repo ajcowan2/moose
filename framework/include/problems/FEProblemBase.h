@@ -11,7 +11,7 @@
 
 #ifdef MOOSE_KOKKOS_ENABLED
 #include "KokkosAssembly.h"
-#include "KokkosSystem.h"
+#include "KokkosFESystem.h"
 #endif
 
 // MOOSE includes
@@ -29,6 +29,8 @@
 #include "MooseApp.h"
 #include "ExecuteMooseObjectWarehouse.h"
 #include "MaterialWarehouse.h"
+#include "MortarInterfaceWarehouse.h"
+#include "Mortar3DSubpatchPlane.h"
 #include "MooseVariableFE.h"
 #include "MultiAppTransfer.h"
 #include "Postprocessor.h"
@@ -242,9 +244,9 @@ public:
    */
   void trustUserCouplingMatrix();
 
-  std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
+  std::vector<std::pair<MooseVariableFieldBase *, MooseVariableFieldBase *>> &
   couplingEntries(const THREAD_ID tid, const unsigned int nl_sys_num);
-  std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
+  std::vector<std::pair<MooseVariableFieldBase *, MooseVariableFieldBase *>> &
   nonlocalCouplingEntries(const THREAD_ID tid, const unsigned int nl_sys_num);
 
   virtual bool hasVariable(const std::string & var_name) const override;
@@ -386,6 +388,10 @@ public:
   setNeighborSubdomainID(const Elem * elem, unsigned int side, const THREAD_ID tid) override;
   virtual void setNeighborSubdomainID(const Elem * elem, const THREAD_ID tid);
   virtual void prepareAssembly(const THREAD_ID tid) override;
+  /**
+   * Begin a fresh neighbor accumulation phase by sizing and zeroing the neighbor blocks.
+   */
+  virtual void prepareAssemblyNeighbor(const THREAD_ID tid);
 
   virtual void addGhostedElem(dof_id_type elem_id) override;
   virtual void addGhostedBoundary(BoundaryID boundary_id) override;
@@ -857,8 +863,8 @@ public:
 
 #ifdef MOOSE_KOKKOS_ENABLED
   /**
-   * Get all Kokkos systems that are associated with MOOSE nonlinear and auxiliary systems
-   * @returns The array of Kokkos systems
+   * Get the Kokkos System array (always populated when any Kokkos object exists)
+   * @returns The array of Kokkos System objects
    */
   ///@{
   Moose::Kokkos::Array<Moose::Kokkos::System> & getKokkosSystems() { return _kokkos_systems; }
@@ -867,15 +873,40 @@ public:
     return _kokkos_systems;
   }
   ///@}
+
   /**
-   * Get the Kokkos system of a specified number that is associated with MOOSE nonlinear and
-   * auxiliary systems
+   * Get the Kokkos FESystem array (populated only when FE Kokkos objects exist)
+   * @returns The array of Kokkos FESystem objects
+   */
+  ///@{
+  Moose::Kokkos::Array<Moose::Kokkos::FESystem> & getKokkosFESystems()
+  {
+    return _kokkos_fe_systems;
+  }
+  const Moose::Kokkos::Array<Moose::Kokkos::FESystem> & getKokkosFESystems() const
+  {
+    return _kokkos_fe_systems;
+  }
+  ///@}
+
+  /**
+   * Get the Kokkos System of a specified number
    * @param sys_num The system number
-   * @returns The Kokkos system
+   * @returns The Kokkos System
    */
   ///@{
   Moose::Kokkos::System & getKokkosSystem(const unsigned int sys_num);
   const Moose::Kokkos::System & getKokkosSystem(const unsigned int sys_num) const;
+  ///@}
+
+  /**
+   * Get the Kokkos FESystem of a specified number
+   * @param sys_num The system number
+   * @returns The Kokkos FESystem
+   */
+  ///@{
+  Moose::Kokkos::FESystem & getKokkosFESystem(const unsigned int sys_num);
+  const Moose::Kokkos::FESystem & getKokkosFESystem(const unsigned int sys_num) const;
   ///@}
 #endif
 
@@ -979,6 +1010,12 @@ public:
   virtual void addKokkosBoundaryCondition(const std::string & bc_name,
                                           const std::string & name,
                                           InputParameters & parameters);
+  virtual void addKokkosLinearFVKernel(const std::string & kernel_name,
+                                       const std::string & name,
+                                       InputParameters & parameters);
+  virtual void addKokkosLinearFVBC(const std::string & bc_name,
+                                   const std::string & name,
+                                   InputParameters & parameters);
 #endif
 
   virtual void
@@ -1969,7 +2006,12 @@ public:
       bool periodic,
       const bool debug,
       const bool correct_edge_dropping,
-      const Real minimum_projection_angle);
+      const Real minimum_projection_angle,
+      const Mortar3DSubpatchPlane mortar_3d_subpatch_plane,
+      const MooseEnum & triangulation,
+      const bool triangulate_triangles,
+      const Mortar3DQuadraturePointMapping mortar_3d_qp_mapping =
+          Mortar3DQuadraturePointMapping::NORMAL_PROJECTION);
 
   /**
    * Return the undisplaced or displaced mortar generation object associated with the provided
@@ -1987,8 +2029,7 @@ public:
                      bool on_displaced);
   ///@}
 
-  const std::unordered_map<std::pair<BoundaryID, BoundaryID>,
-                           std::unique_ptr<AutomaticMortarGeneration>> &
+  const std::unordered_map<std::pair<BoundaryID, BoundaryID>, MortarInterfaceConfig> &
   getMortarInterfaces(bool on_displaced) const;
 
   virtual void possiblyRebuildGeomSearchPatches();
@@ -2450,6 +2491,37 @@ public:
    */
   bool needsPreviousMultiAppFixedPointIterationAuxiliary() const;
 
+  /**
+   * Set a flag that indicates that user requires values for the previous multi-system fixed point
+   * iterate for the solver systems (not auxiliary)
+   * @param needed the value that should be set to the flag
+   * @param solver_sys_num the index of the solver system for which the previous iteration is needed
+   */
+  void needsPreviousMultiSystemFixedPointIterationSolution(bool needed,
+                                                           const unsigned int solver_sys_num);
+
+  /**
+   * Check to see whether we need to compute the variable values of the previous multi-system fixed
+   * point iteration for the solver systems (not auxiliary)
+   * @param solver_sys_num the index of the solver system for which the previous iteration is needed
+   * @return true if the user required values of the previous multi-system fixed point iteration
+   */
+  bool needsPreviousMultiSystemFixedPointIterationSolution(const unsigned int solver_sys_num) const;
+
+  /**
+   * Set a flag that indicates that user requires values for the previous multi-system fixed point
+   * iterate for the auxiliary system
+   */
+  void needsPreviousMultiSystemFixedPointIterationAuxiliary(bool state);
+
+  /**
+   * Check to see whether we need to compute the variable values of the previous multi-system fixed
+   * point iteration for the auxiliary system
+   * @return true if the user required values of the previous multi-system fixed point iteration
+   * from the auxiliary system
+   */
+  bool needsPreviousMultiSystemFixedPointIterationAuxiliary() const;
+
   ///@{
   /**
    * Convenience zeros
@@ -2682,6 +2754,15 @@ public:
    * @return whether to perform a boundary condition integrity check for finite volume
    */
   bool fvBCsIntegrityCheck() const { return _fv_bcs_integrity_check; }
+
+  /**
+   * @return whether to perform an integrity check for side user objects consuming interface
+   * material properties
+   */
+  bool sideUOInterfaceMatPropIntegrityCheck() const
+  {
+    return _side_uo_interface_mat_prop_integrity_check;
+  }
 
   /**
    * @param fv_bcs_integrity_check Whether to perform a boundary condition integrity check for
@@ -3100,7 +3181,10 @@ protected:
   std::vector<std::unique_ptr<libMesh::CouplingMatrix>> _cm; ///< Coupling matrix for variables.
 
 #ifdef MOOSE_KOKKOS_ENABLED
+  /// System array - sparsely populated (only slots for systems needing a Kokkos::System)
   Moose::Kokkos::Array<Moose::Kokkos::System> _kokkos_systems;
+  /// FESystem array - sparsely populated (only slots for systems needing a Kokkos::FESystem)
+  Moose::Kokkos::Array<Moose::Kokkos::FESystem> _kokkos_fe_systems;
 #endif
 
   /// Dimension of the subspace spanned by the vectors with a given prefix
@@ -3315,6 +3399,10 @@ protected:
   std::vector<bool> _previous_multiapp_fp_nl_solution_required;
   /// Indicates we need to save the previous multiapp fixed-point iteration auxiliary variable values
   bool _previous_multiapp_fp_aux_solution_required;
+  /// Indicates we need to save the previous multi-system fixed-point iteration solver variable values
+  std::vector<bool> _previous_multisystem_fp_nl_solution_required;
+  /// Indicates we need to save the previous multi-system fixed-point iteration auxiliary variable values
+  bool _previous_multisystem_fp_aux_solution_required;
 
   /// Indicates if nonlocal coupling is required/exists
   bool _has_nonlocal_coupling;
@@ -3338,6 +3426,9 @@ protected:
   /// whether to perform checking of boundary restricted elemental object variable dependencies,
   /// e.g. whether the variable dependencies are defined on the selected boundaries
   const bool _boundary_restricted_elem_integrity_check;
+
+  /// Whether to check that side user objects do not consume interface material properties
+  const bool _side_uo_interface_mat_prop_integrity_check;
 
   /// Determines whether and which subdomains are to be checked to ensure that they have an active material
   CoverageCheckMode _material_coverage_check;

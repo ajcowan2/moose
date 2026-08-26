@@ -13,8 +13,6 @@
 #include "CellCenteredMapFunctor.h"
 #include "FaceCenteredMapFunctor.h"
 #include "VectorComponentFunctor.h"
-#include "LinearFVAnisotropicDiffusion.h"
-#include "LinearFVElementalKernel.h"
 #include <unordered_map>
 #include <set>
 #include <unordered_set>
@@ -24,6 +22,7 @@
 class MooseMesh;
 class INSFVVelocityVariable;
 class INSFVPressureVariable;
+class LinearFVPressureCorrectionDiffusion;
 namespace libMesh
 {
 class Elem;
@@ -121,7 +120,7 @@ protected:
   std::vector<const MooseLinearVariableFVReal *> _vel;
 
   /// Pointer to the pressure diffusion term in the pressure Poisson equation
-  LinearFVAnisotropicDiffusion * _p_diffusion_kernel;
+  LinearFVPressureCorrectionDiffusion * _p_diffusion_kernel;
 
   /**
    * A map functor from faces to $HbyA_{ij} = (A_{offdiag}*\mathrm{(predicted~velocity)} -
@@ -155,11 +154,6 @@ protected:
    * A map functor from faces to mass fluxes which are used in the advection terms.
    */
   FaceCenteredMapFunctor<Real, std::unordered_map<dof_id_type, Real>> & _face_mass_flux;
-
-  /// Pointer to the body force terms
-  std::vector<std::vector<LinearFVElementalKernel *>> _body_force_kernels;
-  /// Vector of body force term names
-  std::vector<std::vector<std::string>> _body_force_kernel_names;
 
   /**
    * for a PISO iteration we need to hold on to the original pressure gradient field.
@@ -195,6 +189,9 @@ protected:
 
   /// Enumerator for the method used for pressure projection
   const MooseEnum _pressure_projection_method;
+
+  /// Interpolation method used for the pressure diffusion coefficient on faces
+  const Moose::FV::InterpMethod _pressure_diffusion_interp_method;
 
 private:
   /// The subset of the FaceInfo objects that actually cover the subdomains which the

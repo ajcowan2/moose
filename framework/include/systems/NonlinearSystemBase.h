@@ -830,7 +830,9 @@ protected:
   void computeKokkosJacobian(const std::set<TagID> & tags);
 #endif
 
-  void computeDiracContributions(const std::set<TagID> & tags, bool is_jacobian);
+  void computeDiracContributions(const std::set<TagID> & vector_tags,
+                                 const std::set<TagID> & matrix_tags,
+                                 Moose::ComputeType compute_type);
 
   void computeScalarKernelsJacobians(const std::set<TagID> & tags);
 
@@ -1079,6 +1081,14 @@ protected:
   std::unique_ptr<libMesh::DiagonalMatrix<Number>> _scaling_matrix;
 
 private:
+  /**
+   * Retrieve every finite volume object belonging to this system on thread \p tid, as
+   * SetupInterfaces, so that the setup methods can be dispatched to all finite volume families
+   * with a single loop. Each family is queried through a MooseObject-derived base class to avoid
+   * runtime side-casts in TheWarehouse.
+   */
+  std::vector<SetupInterface *> getFVSetupObjects(THREAD_ID tid);
+
   /**
    * Finds the implicit sparsity graph between geometrically related dofs.
    */
