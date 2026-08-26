@@ -17,7 +17,9 @@
     input = curlcurl.i
     xmldiff = 'OutputData/CurlCurl/Run0/Run0.pvd
                 OutputData/CurlCurl/Run0/Cycle000001/proc000000.vtu'
-    cli_args = 'Solvers/active=cg Executioner/assembly_level=partial'
+    cli_args = 'Solvers/active="cg matrix_free_ams" Executioner/assembly_level=partial '
+               'FESpaces/HCurlFESpace/closed_basis=GaussLobatto '
+               'FESpaces/HCurlFESpace/open_basis=IntegratedGLL'
     requirement = 'The system shall have the ability to solve a partially assembled definite Maxwell problem with Nedelec elements of the first kind using MFEM.'
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
@@ -35,6 +37,22 @@
     max_parallel = 1 # schemadiff with multiple ranks
     recover = false
     expect_out = 'Parallel Type:.*distributed.*Mesh Dimension.*3.*Spatial Dimension.*3.*Elems.*2476.*Num Subdomains.*1.*Solver.*MFEMHypreGMRES'
+  []
+  [MFEMDiffusion1D]
+    type = CSVDiff
+    input = diffusion.i
+    csvdiff = 'OutputData/Diffusion1D.csv'
+    cli_args = 'Mesh/file=../mesh/ref-segment.mesh '
+               'Mesh/uniform_refine=5 '
+               'BCs/bottom/boundary=1 '
+               'BCs/top/boundary=2 '
+               'Outputs/active=csv Outputs/csv=true '
+               'Outputs/file_base=OutputData/Diffusion1D'
+    requirement = 'The system shall have the ability to solve a 1D diffusion problem using MFEM.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu cuda'
+    recover = false
+    expect_out = 'Parallel Type:.*distributed.*Mesh Dimension.*1.*Spatial Dimension.*1.*Elems.*32.*Num Subdomains.*1.*Solver.*MFEMHypreGMRES'
   []
   [MFEMDiffusionAMR]
     design = 'MFEMRefinementMarker.md MFEMIndicator.md MFEML2ZienkiewiczZhuIndicator.md'
@@ -66,9 +84,11 @@
     input = diffusion.i
     xmldiff = 'OutputData/Diffusion/Run0/Run0.pvd '
               'OutputData/Diffusion/Run0/Cycle000001/proc000000.vtu'
-    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
+    cli_args = 'Solvers/inactive="boomeramg" '
+               'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
                'Executioner/assembly_level=partial'
     requirement = 'The system shall have the ability to solve a diffusion problem with partial assembly using MFEM.'
+    abs_zero = 8e-10
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
     max_parallel = 1 # schemadiff with multiple ranks
@@ -79,11 +99,13 @@
     input = diffusion.i
     xmldiff = 'OutputData/Diffusion/Run0/Run0.pvd '
               'OutputData/Diffusion/Run0/Cycle000001/proc000000.vtu'
-    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
+    cli_args = 'Solvers/inactive="boomeramg" '
+               'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
                'Executioner/device=ceed-cpu '
                'Executioner/assembly_level=none'
     compute_devices = 'ceed-cpu'
     requirement = 'The system shall have the ability to solve a diffusion problem with matrix-free assembly using MFEM.'
+    abs_zero = 5e-10
     capabilities = 'mfem'
     max_parallel = 1
     recover = false
@@ -92,7 +114,7 @@
     type = CSVDiff
     input = diffusion.i
     csvdiff = 'OutputData/DiffusionPartialMPI.csv'
-    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
+    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi Solvers/inactive="boomeramg" '
                'Executioner/assembly_level=partial '
                'Executioner/gpu_aware_mpi=true '
                'Outputs/active=csv Outputs/csv=true '
@@ -109,7 +131,7 @@
     type = CSVDiff
     input = diffusion.i
     csvdiff = 'OutputData/DiffusionPartialMPI.csv'
-    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
+    cli_args = 'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi Solvers/inactive="boomeramg" '
                'Executioner/assembly_level=partial '
                'Executioner/gpu_aware_mpi=false '
                'Outputs/active=csv Outputs/csv=true '
@@ -120,6 +142,17 @@
     capabilities = 'mfem'
     compute_devices = 'cuda'
     min_parallel = 2
+    recover = false
+  []
+  [MFEMDiffusionDG]
+    type = XMLDiff
+    input = dg_diffusion.i
+    xmldiff = 'OutputData/DG_Diffusion/Run0/Run0.pvd
+                OutputData/DG_Diffusion/Run0/Cycle000001/proc000000.vtu'
+    requirement = 'The system shall have the ability to solve a diffusion problem using MFEM with DG kernels.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu'
+    max_parallel = 1 # schemadiff with multiple ranks
     recover = false
   []
   [MFEMGradDiv]
@@ -159,6 +192,7 @@
     cli_args = 'BCs/active="bottom top_dirichlet" '
                'Executioner/dt=0.25 Executioner/end_time=1.0 '
                'Outputs/ParaViewDataCollection/file_base=OutputData/HeatConduction '
+               'Solvers/inactive="boomeramg" '
                'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
                'Executioner/assembly_level=element'
     requirement = 'The system shall have the ability to solve a transient heat conduction problem with element assembly using MFEM.'
@@ -178,6 +212,7 @@
     cli_args = 'BCs/active="bottom top_dirichlet" '
                'Executioner/dt=0.25 Executioner/end_time=1.0 '
                'Outputs/ParaViewDataCollection/file_base=OutputData/HeatConduction '
+               'Solvers/inactive="boomeramg" '
                'Solvers/main/type=MFEMCGSolver Solvers/main/preconditioner=jacobi '
                'Executioner/assembly_level=none '
                'Executioner/device=ceed-cpu'
@@ -200,6 +235,15 @@
     max_parallel = 1 # schemadiff with multiple ranks
     recover = false
     restep = false
+  []
+  [MFEMTransientScheme]
+    type = RunException
+    input = heattransfer.i
+    cli_args = 'Executioner/scheme=bdf2'
+    expect_err = 'Time Integration scheme "BDF2" is not supported by MFEMTransient Executioner.'
+    requirement = 'The system shall report an error if the user specifies an unsupported time integration scheme.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu cuda'
   []
   [MFEMMixedHeatTransfer]
     type = XMLDiff
@@ -230,9 +274,22 @@
     xmldiff = 'OutputData/Gravity/Run0/Run0.pvd
                 OutputData/Gravity/Run0/Cycle000001/proc000000.vtu'
     requirement = 'The system shall have the ability to solve a linear elasticity problem for a beam deformed under gravitational loads using MFEM.'
-    capabilities = 'mfem & platform=linux'
+    # clang skip: significant diffs with clang 22 that are unresolved #33466
+    capabilities = 'mfem & platform=linux & compiler!=clang'
     compute_devices = 'cpu' # schemadiff with cuda
     max_parallel = 1 # schemadiff with multiple ranks
+    # diffs at 9e-4 with -march=x86-64-v3
+    rel_err = 2e-3
+    recover = false
+  []
+  [MFEMGravityQuadratureFunction]
+    type = CSVDiff
+    input = gravity_qf.i
+    csvdiff = 'OutputData/GravityQF.csv'
+    design = 'MFEMVectorQuadratureFunction.md'
+    requirement = 'The system shall have the ability to precompute a vector coefficient at quadrature points and reuse the stored values in place of the original coefficient.'
+    capabilities = 'mfem'
+    compute_devices = 'cpu cuda'
     recover = false
   []
   [MFEMIrrotational]
@@ -243,6 +300,7 @@
     abs_zero = 2e-7
     capabilities = 'mfem'
     compute_devices = 'cpu cuda'
+    valgrind = heavy
     recover = false
   []
   [MFEMDarcy]

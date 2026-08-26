@@ -55,6 +55,10 @@ The test: Every changed line should trace directly to the user's request.
 
 - Never delete correct preexisting code comments.
 - Add comments when the code alone does not make clear what's happening.
+- Explain every non-obvious numeric value, including tolerances, with a nearby
+  comment that records its source or rationale rather than merely restating it.
+- Add Doxygen comments for classes and class members whose purpose is not
+  obvious from their names.
 - Use ASCII characters.
 
 ## 5. Code Style
@@ -62,13 +66,23 @@ The test: Every changed line should trace directly to the user's request.
 - Use `make_range` for integer range-based for loops (e.g. `for (const auto i :
   make_range(n))`) instead of raw index loops. Use `index_range(container)`
   when iterating over the indices of a container.
+- Use `libmesh_map_find` for map lookups instead of `.at()`.
 - MOOSE requires C++17, so modern C++ constructs up through that standard are
-  encouraged where they increase code readability.
+  encouraged where they increase code readability. Along those lines, when a member
+  of a structured binding is unused, bind it as `_` instead of avoiding the structured
+  binding solely because a member is unused.
+- Put multiline method implementations outside class definitions.
 
 ## 6. Tool Use
 
 - Prefer builtin tools over bash commands whenever possible in the vein of
   reducing permission prompting.
+- Before building or performing verification, including running tests or
+  invoking a pre-existing MOOSE executable, ask the user whether their MOOSE
+  stack uses conda unless this has already been established in the
+  conversation. If it does, ask which conda environment to activate and wait
+  for the answer before running the command; do not use an existing binary or
+  current shell state as a shortcut around this check.
 
 ## 7. Goal-Driven Execution
 

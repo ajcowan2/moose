@@ -43,6 +43,7 @@ ReferenceResidualConvergence::ReferenceResidualConvergence(const InputParameters
     _norm_type_enum(getParam<MooseEnum>("normalization_type")),
     _accept_mult(getParam<Real>("acceptable_multiplier")),
     _accept_iters(getParam<unsigned int>("acceptable_iterations")),
+    _nl_sys_num(_fe_problem.solverSysNum(getParam<SolverSystemName>("solver_sys"))),
     _residual_vector(nullptr),
     _reference_vector(nullptr),
     _zero_ref_type(
@@ -50,24 +51,27 @@ ReferenceResidualConvergence::ReferenceResidualConvergence(const InputParameters
     _unscale_the_residual(getParam<bool>("unscale_the_residual")),
     _reference_vector_tag_id(Moose::INVALID_TAG_ID)
 {
-  // This restriction is primarily due to reference and residual vector parameters
-  if (_fe_problem.numNonlinearSystems() > 1)
-    paramError("nl_sys_names",
-               "reference residual problem does not currently support multiple nonlinear systems");
+  if (_fe_problem.numNonlinearSystems() > 1 && !isParamSetByUser("solver_sys"))
+    paramError("solver_sys",
+               "Reference residual problem does not currently support multiple nonlinear systems "
+               "in a single Convergence object. Multiple Convergence objects can be used, one for "
+               "each nonlinear system, via the 'solver_sys' parameter.");
 
   if (parameters.isParamValid("residual_vector"))
   {
     const auto residual_vector_tag_id =
         _fe_problem.getVectorTagID(getParam<TagName>("residual_vector"));
-    _residual_vector = &_fe_problem.getNonlinearSystemBase(0).getVector(residual_vector_tag_id);
+    _residual_vector =
+        &_fe_problem.getNonlinearSystemBase(_nl_sys_num).getVector(residual_vector_tag_id);
   }
   else
-    _residual_vector = &_fe_problem.getNonlinearSystemBase(0).RHS();
+    _residual_vector = &_fe_problem.getNonlinearSystemBase(_nl_sys_num).RHS();
 
   if (parameters.isParamValid("reference_vector"))
   {
     _reference_vector_tag_id = _fe_problem.getVectorTagID(getParam<TagName>("reference_vector"));
-    _reference_vector = &_fe_problem.getNonlinearSystemBase(0).getVector(_reference_vector_tag_id);
+    _reference_vector =
+        &_fe_problem.getNonlinearSystemBase(_nl_sys_num).getVector(_reference_vector_tag_id);
   }
   else
     mooseDeprecated(
@@ -106,6 +110,12 @@ ReferenceResidualConvergence::ReferenceResidualConvergence(const InputParameters
     paramError("reference_vector", "If local norm is used, a reference_vector must be provided.");
 }
 
+NonlinearSystemBase &
+ReferenceResidualConvergence::nonlinearSystem()
+{
+  return _fe_problem.getNonlinearSystemBase(_nl_sys_num);
+}
+
 void
 ReferenceResidualConvergence::initialSetup()
 {
@@ -114,7 +124,7 @@ ReferenceResidualConvergence::initialSetup()
   if (!_reference_vector)
     return;
 
-  auto & nonlinear_sys = _fe_problem.getNonlinearSystemBase(/*nl_sys=*/0);
+  auto & nonlinear_sys = nonlinearSystem();
   auto & s = nonlinear_sys.system();
 
   // If the user provides reference_vector, that implies that they want the
@@ -286,14 +296,14 @@ ReferenceResidualConvergence::updateReferenceResidual()
 {
   // If no reference_vector is provided, this method is completely skipped
 
-  auto & current_nl_sys = _fe_problem.currentNonlinearSystem();
-  auto & s = current_nl_sys.system();
+  auto & nonlinear_sys = nonlinearSystem();
+  auto & s = nonlinear_sys.system();
 
   for (const auto i : index_range(_scaling_factors))
-    if (current_nl_sys.isScalarVariable(_soln_vars[i]))
-      _scaling_factors[i] = current_nl_sys.getScalarVariable(0, _soln_vars[i]).scalingFactor();
+    if (nonlinear_sys.isScalarVariable(_soln_vars[i]))
+      _scaling_factors[i] = nonlinear_sys.getScalarVariable(0, _soln_vars[i]).scalingFactor();
     else
-      _scaling_factors[i] = current_nl_sys.getVariable(/*tid*/ 0, _soln_vars[i]).scalingFactor();
+      _scaling_factors[i] = nonlinear_sys.getVariable(/*tid*/ 0, _soln_vars[i]).scalingFactor();
 
   std::fill(_group_resid.begin(), _group_resid.end(), 0.0);
   std::fill(_group_ref_resid.begin(), _group_ref_resid.end(), 0.0);
@@ -372,19 +382,25 @@ ReferenceResidualConvergence::nonlinearConvergenceSetup()
       if (_converge_on_group[i])
       {
         // Print residual
-        out << "   " << std::setw(var_space + 8) << std::right
-            << _group_names[i] + "-> res: " << std::setw(8) << _group_resid[i];
+        out << "   " << std::setw(var_space + 8) << std::right << _group_names[i] + "-> res: "
+            << (_group_resid[i] < _abs_tol ? COLOR_YELLOW : COLOR_DEFAULT) << std::setw(8)
+            << _group_resid[i] << COLOR_DEFAULT;
 
         // Print res/ref ratio
         if (_local_norm)
-          out << "  local res/ref: " << std::setw(8) << _group_ref_resid[i] << "\n";
+          out << "  local res/ref: "
+              << (_group_resid[i] / _group_ref_resid[i] < _rel_tol ? COLOR_GREEN : COLOR_DEFAULT)
+              << std::setw(8) << _group_ref_resid[i] << COLOR_DEFAULT << "\n";
         else
         {
           // Print reference first if not local norm
-          out << "  ref: " << std::setw(8) << _group_ref_resid[i];
-          out << "  res/ref: " << std::setw(8)
-              << (_group_ref_resid[i] ? _group_resid[i] / _group_ref_resid[i] : _group_resid[i])
-              << "\n";
+          out << "  ref: " << std::setw(8) << _group_ref_resid[i] << "  res/ref: ";
+
+          if (!_group_ref_resid[i])
+            out << _group_resid[i] << "\n";
+          else
+            out << (_group_resid[i] / _group_ref_resid[i] < _rel_tol ? COLOR_GREEN : COLOR_DEFAULT)
+                << std::setw(8) << _group_resid[i] / _group_ref_resid[i] << COLOR_DEFAULT << "\n";
         }
       }
     }
@@ -422,7 +438,7 @@ ReferenceResidualConvergence::checkConvergenceIndividVars(
 }
 
 bool
-ReferenceResidualConvergence::checkResidualConvergence(const unsigned int it,
+ReferenceResidualConvergence::checkResidualConvergence(const unsigned int n_iter,
                                                        const Real fnorm,
                                                        const Real ref_norm,
                                                        const Real rel_tol,
@@ -432,14 +448,14 @@ ReferenceResidualConvergence::checkResidualConvergence(const unsigned int it,
   // If no refernce_vector is provided, just revert to DefaultNonlinearConvergence behavior
   if (!_reference_vector)
     return DefaultNonlinearConvergence::checkResidualConvergence(
-        it, fnorm, ref_norm, rel_tol, abs_tol, oss);
+        n_iter, fnorm, ref_norm, rel_tol, abs_tol, oss);
 
   if (checkConvergenceIndividVars(fnorm, abs_tol, rel_tol, ref_norm))
   {
     oss << "Converged normally";
     return true;
   }
-  else if (it >= _accept_iters &&
+  else if (n_iter >= _accept_iters &&
            checkConvergenceIndividVars(
                fnorm, abs_tol * _accept_mult, rel_tol * _accept_mult, ref_norm))
   {

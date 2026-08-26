@@ -1100,7 +1100,7 @@ transitionLayerGenerator(MeshBase & mesh,
   std::vector<boundary_id_type> boundary_ids;
   for (const auto & sideset : boundary_names)
   {
-    if (!MooseMeshUtils::hasBoundaryName(mesh, sideset))
+    if (!MooseMeshUtils::hasBoundaryNameOrID(mesh, sideset))
       throw MooseException("The provided boundary '", sideset, "' was not found within the mesh");
     boundary_ids.push_back(MooseMeshUtils::getBoundaryID(sideset, mesh));
     MooseMeshUtils::changeBoundaryId(mesh, boundary_ids.back(), uniform_tmp_bid, false);
@@ -1325,7 +1325,7 @@ assignConvertedElementsSubdomainNameSuffix(
         throw MooseException(
             "This suffix for converted TET4 elements results in a subdomain name, " + new_name +
             ", that already exists in the mesh. Please choose a different suffix.");
-      mesh.subdomain_name(subdomain_id + sid_shift_base) = new_name;
+      mesh.set_subdomain_name(subdomain_id + sid_shift_base, new_name, true);
     }
     if (MooseMeshUtils::hasSubdomainID(mesh, subdomain_id + 2 * sid_shift_base))
     {
@@ -1337,7 +1337,7 @@ assignConvertedElementsSubdomainNameSuffix(
         throw MooseException(
             "This suffix for converted PYRAMID5 elements results in a subdomain name, " + new_name +
             ", that already exists in the mesh. Please choose a different suffix.");
-      mesh.subdomain_name(subdomain_id + 2 * sid_shift_base) = new_name;
+      mesh.set_subdomain_name(subdomain_id + 2 * sid_shift_base, new_name, true);
     }
   }
 }

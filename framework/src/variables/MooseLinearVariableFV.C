@@ -320,12 +320,12 @@ MooseLinearVariableFV<OutputType>::evaluate(const FaceArg & face, const StateArg
   // element value
   else if (face_type == FaceInfo::VarFaceNeighbors::ELEM)
   {
-    const auto & elem_info = this->_mesh.elemInfo(fi->elemPtr()->id());
+    const auto & elem_info = *(face.fi->elemInfo());
     return getElemValue(elem_info, state);
   }
   else if (face_type == FaceInfo::VarFaceNeighbors::NEIGHBOR)
   {
-    const auto & elem_info = this->_mesh.elemInfo(fi->neighborPtr()->id());
+    const auto & elem_info = *(face.fi->neighborInfo());
     return getElemValue(elem_info, state);
   }
   else
@@ -597,32 +597,44 @@ template <typename OutputType>
 void
 MooseLinearVariableFV<OutputType>::computeElemValues()
 {
-  _element_data->setGeometry(Moose::Volume);
-  _element_data->computeValues();
+  if (_compute_qp_data)
+  {
+    _element_data->setGeometry(Moose::Volume);
+    _element_data->computeValues();
+  }
 }
 
 template <typename OutputType>
 void
 MooseLinearVariableFV<OutputType>::computeElemValuesFace()
 {
-  _element_data->setGeometry(Moose::Face);
-  _element_data->computeValues();
+  if (_compute_qp_data)
+  {
+    _element_data->setGeometry(Moose::Face);
+    _element_data->computeValues();
+  }
 }
 
 template <typename OutputType>
 void
 MooseLinearVariableFV<OutputType>::computeNeighborValuesFace()
 {
-  _neighbor_data->setGeometry(Moose::Face);
-  _neighbor_data->computeValues();
+  if (_compute_qp_data)
+  {
+    _neighbor_data->setGeometry(Moose::Face);
+    _neighbor_data->computeValues();
+  }
 }
 
 template <typename OutputType>
 void
 MooseLinearVariableFV<OutputType>::computeNeighborValues()
 {
-  _neighbor_data->setGeometry(Moose::Volume);
-  _neighbor_data->computeValues();
+  if (_compute_qp_data)
+  {
+    _neighbor_data->setGeometry(Moose::Volume);
+    _neighbor_data->computeValues();
+  }
 }
 
 template <typename OutputType>
@@ -675,6 +687,13 @@ MooseLinearVariableFV<OutputType>::oldestSolutionStateRequested() const
   state = std::max(state, _element_data->oldestSolutionStateRequested());
   state = std::max(state, _neighbor_data->oldestSolutionStateRequested());
   return state;
+}
+
+template <typename OutputType>
+void
+MooseLinearVariableFV<OutputType>::prepareIC()
+{
+  _element_data->prepareIC();
 }
 
 template <typename OutputType>

@@ -311,7 +311,7 @@ PorousFlowBrineCO2::saturation(const ADReal & pressure,
                                std::vector<FluidStateProperties> & fsp) const
 {
   auto & gas = fsp[_gas_phase_number];
-  auto & liquid = fsp[_aqueous_fluid_component];
+  auto & liquid = fsp[_aqueous_phase_number];
 
   // Approximate liquid density as saturation isn't known yet, by using the gas
   // pressure rather than the liquid pressure. This does result in a small error
@@ -992,7 +992,8 @@ PorousFlowBrineCO2::solveEquilibriumMoleFractionHighTemp(
   else
   {
     // Residual function for Newton-Raphson
-    auto fy = [mnacl, this](Real y, Real A, Real B) {
+    auto fy = [mnacl, this](Real y, Real A, Real B)
+    {
       return y -
              (1.0 - B) * _invMh2o / ((1.0 / A - B) * (2.0 * mnacl + _invMh2o) + 2.0 * mnacl * B);
     };

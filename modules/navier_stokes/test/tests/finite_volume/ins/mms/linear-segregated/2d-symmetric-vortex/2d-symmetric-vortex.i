@@ -24,7 +24,6 @@ advected_interp_method = 'average'
     pressure = pressure
     rho = ${rho}
     p_diffusion_kernel = p_diffusion
-    body_force_kernel_names = "u_forcing; v_forcing"
   []
 []
 
@@ -46,11 +45,17 @@ advected_interp_method = 'average'
   []
 []
 
+[FVInterpolationMethods]
+  [average]
+    type = FVGeometricAverage
+  []
+[]
+
 [LinearFVKernels]
   [u_advection_stress]
     type = LinearWCNSFVMomentumFlux
     variable = vel_x
-    advected_interp_method = ${advected_interp_method}
+    advected_interp_method_name = ${advected_interp_method}
     mu = ${mu}
     u = vel_x
     v = vel_y
@@ -61,7 +66,7 @@ advected_interp_method = 'average'
   [v_advection_stress]
     type = LinearWCNSFVMomentumFlux
     variable = vel_y
-    advected_interp_method = ${advected_interp_method}
+    advected_interp_method_name = ${advected_interp_method}
     mu = ${mu}
     u = vel_x
     v = vel_y
@@ -92,7 +97,7 @@ advected_interp_method = 'average'
     source_density = forcing_v
   []
   [p_diffusion]
-    type = LinearFVAnisotropicDiffusion
+    type = LinearFVPressureCorrectionDiffusion
     variable = pressure
     diffusion_tensor = 'Ainv' # Functor created in the RhieChowMassFlux UO
     use_nonorthogonal_correction = false
@@ -141,6 +146,9 @@ advected_interp_method = 'average'
     variable = pressure
     HbyA_flux = HbyA
     Ainv = Ainv
+    u = vel_x
+    v = vel_y
+    rho = ${rho}
   []
   [pressure-symmetry]
     type = LinearFVPressureSymmetryBC

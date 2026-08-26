@@ -6,6 +6,8 @@ monthly to the [MOOSE discussion forum](contact_us.md) as well as provided below
 
 ## 2026
 
+- [July, 2026](2026_07.md)
+- [June, 2026](2026_06.md)
 - [May, 2026](2026_05.md)
 - [April, 2026](2026_04.md)
 - [March, 2026](2026_03.md)

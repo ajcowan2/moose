@@ -18,6 +18,13 @@
 #include "MFEMRefinementMarker.h"
 #include "MFEMComplexVariable.h"
 
+#include <map>
+
+namespace Moose::MFEM
+{
+struct SolutionState;
+}
+
 class MFEMProblem : public ExternalProblem
 {
 public:
@@ -73,6 +80,13 @@ public:
   void addFESpace(const std::string & type, const std::string & name, InputParameters & parameters);
 
   /**
+   * Add an MFEMFESpaceHierarchy to the problem.
+   */
+  void addFESpaceHierarchy(const std::string & type,
+                           const std::string & name,
+                           InputParameters & parameters);
+
+  /**
    * Set the mesh used by MFEM.
    */
   void setMesh();
@@ -81,6 +95,13 @@ public:
    * Add an MFEM SubMesh to the problem.
    */
   void addSubMesh(const std::string & type, const std::string & name, InputParameters & parameters);
+
+  /**
+   * Add an MFEM QuadratureFunction-backed coefficient to the problem.
+   */
+  void addQuadratureFunction(const std::string & type,
+                             const std::string & name,
+                             InputParameters & parameters);
 
   /**
    * Add transfers between MultiApps and/or MFEM SubMeshes.
@@ -196,12 +217,6 @@ public:
                               InputParameters & parameters) override;
 
   /**
-   * Method called in AddMFEMPreconditionerAction which will create the solver.
-   */
-  void addMFEMPreconditioner(const std::string & user_object_name,
-                             const std::string & name,
-                             InputParameters & parameters);
-  /**
    * Override of FEProblemBase::addIndicator. Creates the MFEMIndicator used when setting up
    * adaptive mesh refinement later.
    */
@@ -218,11 +233,17 @@ public:
                  InputParameters & parameters) override;
 
   /**
-   * Method called in AddMFEMSolverAction which will create the solver.
+   * Method called in AddMFEMSolverAction which records a solver for later dependency-ordered
+   * construction.
    */
   virtual void addMFEMSolver(const std::string & user_object_name,
                              const std::string & name,
                              InputParameters & parameters);
+
+  /**
+   * Construct recorded MFEM solvers in dependency order and select the problem driver solver(s).
+   */
+  virtual void resolveMFEMSolvers();
 
   /**
    * Execute MFEM executed objects scheduled on the supplied execute flag.
@@ -358,6 +379,19 @@ public:
 
 protected:
   /**
+   * Verify that a primary variable's numeric type matches the problem's equation system.
+   */
+  void validateVariableNumericType(const std::string & var_type,
+                                   const std::string & var_name) const;
+
+  struct MFEMSolverDefinition
+  {
+    std::string type;
+    InputParameters * parameters;
+    bool referenced = false;
+  };
+
+  /**
    * Aggregated MFEM-side state for meshes, spaces, variables, coefficients, and solvers.
    */
   MFEMProblemData _problem_data;
@@ -366,6 +400,17 @@ protected:
    * The numeric representation currently active for this problem.
    */
   NumericType _num_type;
+
+  /**
+   * Solver definitions recorded by AddMFEMSolverAction before the dependency resolver constructs
+   * them. Each key is the user-provided solver object name, which corresponds to a child block
+   * name under [Solvers]. Solver parameters of type MFEMSolverName refer to these same keys when
+   * declaring dependencies between solver objects.
+   */
+  std::map<std::string, MFEMSolverDefinition> _mfem_solver_definitions;
+
+  /// Restartable MFEM solution state associated with this problem.
+  Moose::MFEM::SolutionState & _solution_state_data;
 };
 
 template <typename T>

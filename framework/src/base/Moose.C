@@ -43,6 +43,8 @@ const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_BEGIN =
     registerDefaultExecFlag("MULTIAPP_FIXED_POINT_BEGIN");
 const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_CONVERGENCE =
     registerDefaultExecFlag("MULTIAPP_FIXED_POINT_CONVERGENCE");
+const ExecFlagType EXEC_MULTISYSTEM_FIXED_POINT_ITERATION_END =
+    registerDefaultExecFlag("MULTISYSTEM_FIXED_POINT_ITERATION_END");
 const ExecFlagType EXEC_FINAL = registerDefaultExecFlag("FINAL");
 const ExecFlagType EXEC_FORCED = registerExecFlag("FORCED");
 const ExecFlagType EXEC_FAILED = registerExecFlag("FAILED");
@@ -90,6 +92,40 @@ registerAll(Factory & f, ActionFactory & af, Syntax & s)
   url = {https://www.sciencedirect.com/science/article/pii/S2352711025002316},
   author = {Logan Harbour and Guillaume Giudicelli and Alexander D. Lindsay and Peter German and Joshua Hansel and Casey Icenhour and Mengnan Li and Jason M. Miller and Roy H. Stogner and Patrick Behne and Daniel Yankura and Zachary M. Prince and Corey DeChant and Daniel Schwen and Benjamin W. Spencer and Mauricio Tano and Namjae Choi and Yaqi Wang and Max Nezdyur and Yinbin Miao and Tianchen Hu and Shikhar Kumar and Christopher Matthews and Brandon Langley and Nuno Nobre and Alexander Blair and Chris MacMackin and Henrique Bergallo Rocha and Edward Palmer and Jesse Carter and J{\"o}rg Meier and Andrew E. Slaughter and David Andr{\v{s}} and Robert W. Carlsen and Fande Kong and Derek R. Gaston and Cody J. Permann},
 })");
+
+  // The libMesh citation is registered under "libMesh" but not tied to any object label, so the
+  // per-object loop in MooseApp::requestCitations() does not emit it; emission is gated on the
+  // finite element backend actually used in the run.
+  Registry::addAppCitation("libMesh",
+                           "libMeshPaper",
+                           R"(@article{libMeshPaper,
+  author = {B.~S.~Kirk and J.~W.~Peterson and R.~H.~Stogner and G.~F.~Carey},
+  title = {{\texttt{libMesh}: A C++ Library for Parallel Adaptive Mesh
+              Refinement/Coarsening Simulations}},
+  journal = {Engineering with Computers},
+  volume = {22},
+  number = {3--4},
+  pages = {237--254},
+  year = {2006},
+  url={http://dx.doi.org/10.1007/s00366-006-0049-3}
+})");
+
+#ifdef MOOSE_MFEM_ENABLED
+  // Like libMesh, the MFEM citation is emitted by MooseApp::requestCitations() only when the run
+  // actually uses the MFEM backend.
+  Registry::addAppCitation("MFEM",
+                           "mfem-2024",
+                           R"(@article{mfem-2024,
+  title = {High-Performance Finite Elements with {MFEM}},
+  author = {J. Andrej and N. Atallah and J.-P. B{\"a}cker and J.-S. Camier and D. Copeland and V. Dobrev and Y. Dudouit and T. Duswald and B. Keith and D. Kim and T. Kolev and B. Lazarov and K. Mittal and W. Pazner and S. Petrides and S. Shiraiwa and M. Stowell and V. Tomov},
+  journal = {The International Journal of High Performance Computing Applications},
+  volume = {38},
+  number = {5},
+  pages = {447--467},
+  year = {2024},
+  publisher = {SAGE Publications Sage UK: London, England},
+})");
+#endif
 }
 
 void
@@ -132,110 +168,111 @@ addActionTypes(Syntax & syntax)
 
   // This task does not construct an object, but it needs all of the parameters that
   // would normally be used to construct an object.
-  registerMooseObjectTask("determine_system_type",        Executioner,               true);
+  registerMooseObjectTask("determine_system_type",            Executioner,               true);
 
-  registerMooseObjectTask("setup_mesh",                   MooseMesh,                 false);
-  registerMooseObjectTask("set_mesh_base",                MooseMesh,                 false);
-  registerMooseObjectTask("init_mesh",                    MooseMesh,                 false);
-  registerMooseObjectTask("add_mesh_generator",           MeshGenerator,             false);
+  registerMooseObjectTask("setup_mesh",                       MooseMesh,                 false);
+  registerMooseObjectTask("set_mesh_base",                    MooseMesh,                 false);
+  registerMooseObjectTask("init_mesh",                        MooseMesh,                 false);
+  registerMooseObjectTask("add_mesh_generator",               MeshGenerator,             false);
   registerTask("create_added_mesh_generators", true);
-  registerMooseObjectTask("append_mesh_generator",        MeshGenerator,             false);
+  registerMooseObjectTask("append_mesh_generator",            MeshGenerator,             false);
 
-  registerMooseObjectTask("add_kernel",                   Kernel,                    false);
-  appendMooseObjectTask  ("add_kernel",                   EigenKernel);
-  appendMooseObjectTask  ("add_kernel",                   VectorKernel);
-  appendMooseObjectTask  ("add_kernel",                   ArrayKernel);
-  appendMooseObjectTask  ("add_kernel",                   ADArrayKernel);
+  registerMooseObjectTask("add_kernel",                       Kernel,                    false);
+  appendMooseObjectTask  ("add_kernel",                       EigenKernel);
+  appendMooseObjectTask  ("add_kernel",                       VectorKernel);
+  appendMooseObjectTask  ("add_kernel",                       ArrayKernel);
+  appendMooseObjectTask  ("add_kernel",                       ADArrayKernel);
 
-  registerMooseObjectTask("add_variable",                 MooseVariableBase,         false);
-  registerMooseObjectTask("add_aux_variable",             MooseVariableBase,         false);
-  registerMooseObjectTask("add_elemental_field_variable", MooseVariableBase,         false);
-  registerMooseObjectTask("add_variables_physics",        MooseVariableBase,         false);
+  registerMooseObjectTask("add_variable",                     MooseVariableBase,         false);
+  registerMooseObjectTask("add_aux_variable",                 MooseVariableBase,         false);
+  registerMooseObjectTask("add_elemental_field_variable",     MooseVariableBase,         false);
+  registerMooseObjectTask("add_variables_physics",            MooseVariableBase,         false);
 
-  registerMooseObjectTask("add_nodal_kernel",             NodalKernel,               false);
+  registerMooseObjectTask("add_nodal_kernel",                 NodalKernel,               false);
 
-  registerMooseObjectTask("add_functor_material",         FunctorMaterial,           false);
-  registerMooseObjectTask("add_material",                 MaterialBase,              false);
-  appendDeprecatedMooseObjectTask("add_material",         FunctorMaterial);
-  registerMooseObjectTask("add_materials_physics",        FunctorMaterial,           false);
-  appendMooseObjectTask  ("add_materials_physics",        MaterialBase);
+  registerMooseObjectTask("add_functor_material",             FunctorMaterial,           false);
+  registerMooseObjectTask("add_material",                     MaterialBase,              false);
+  appendDeprecatedMooseObjectTask("add_material",             FunctorMaterial);
+  registerMooseObjectTask("add_materials_physics",            FunctorMaterial,           false);
+  appendMooseObjectTask  ("add_materials_physics",            MaterialBase);
 
-  registerMooseObjectTask("add_bc",                       BoundaryCondition,         false);
+  registerMooseObjectTask("add_bc",                           BoundaryCondition,         false);
 
-  registerMooseObjectTask("add_function",                 Function,                  false);
+  registerMooseObjectTask("add_function",                     Function,                  false);
 
-  registerMooseObjectTask("add_distribution",             Distribution,              false);
-  registerMooseObjectTask("add_sampler",                  Sampler,                   false);
+  registerMooseObjectTask("add_distribution",                 Distribution,              false);
+  registerMooseObjectTask("add_sampler",                      Sampler,                   false);
 
-  registerMooseObjectTask("add_aux_kernel",               AuxKernel,                 false);
-  appendMooseObjectTask  ("add_aux_kernel",               VectorAuxKernel);
-  appendMooseObjectTask  ("add_aux_kernel",               ArrayAuxKernel);
+  registerMooseObjectTask("add_aux_kernel",                   AuxKernel,                 false);
+  appendMooseObjectTask  ("add_aux_kernel",                   VectorAuxKernel);
+  appendMooseObjectTask  ("add_aux_kernel",                   ArrayAuxKernel);
 
-  registerMooseObjectTask("add_bound",                    Bounds,                    false);
+  registerMooseObjectTask("add_bound",                        Bounds,                    false);
 
-  registerMooseObjectTask("add_scalar_kernel",            ScalarKernel,              false);
-  registerMooseObjectTask("add_aux_scalar_kernel",        AuxScalarKernel,           false);
-  registerMooseObjectTask("add_dirac_kernel",             DiracKernel,               false);
-  appendMooseObjectTask  ("add_dirac_kernel",             VectorDiracKernel);
-  registerMooseObjectTask("add_dg_kernel",                DGKernel,                  false);
-  registerMooseObjectTask("add_fv_kernel",                FVKernel,                  false);
-  registerMooseObjectTask("add_interpolation_method",     FVInterpolationMethod,     false);
-  registerMooseObjectTask("add_linear_fv_kernel",         LinearFVKernel,            false);
-  registerMooseObjectTask("add_fv_bc",                    FVBoundaryCondition,       false);
-  registerMooseObjectTask("add_linear_fv_bc",             LinearFVBoundaryCondition, false);
-  registerMooseObjectTask("add_fv_ik",                    FVInterfaceKernel,         false);
-  registerMooseObjectTask("add_interface_kernel",         InterfaceKernel,           false);
-  appendMooseObjectTask  ("add_interface_kernel",         VectorInterfaceKernel);
-  registerMooseObjectTask("add_constraint",               Constraint,                false);
-  registerMooseObjectTask("add_hybridized_kernel",        HDGKernel,                 false);
-  registerMooseObjectTask("add_hybridized_integrated_bc", HDGIntegratedBC,           false);
+  registerMooseObjectTask("add_scalar_kernel",                ScalarKernel,              false);
+  registerMooseObjectTask("add_aux_scalar_kernel",            AuxScalarKernel,           false);
+  registerMooseObjectTask("add_dirac_kernel",                 DiracKernel,               false);
+  appendMooseObjectTask  ("add_dirac_kernel",                 VectorDiracKernel);
+  registerMooseObjectTask("add_dg_kernel",                    DGKernel,                  false);
+  registerMooseObjectTask("add_fv_kernel",                    FVKernel,                  false);
+  registerMooseObjectTask("add_interpolation_method",         FVInterpolationMethod,     false);
+  registerMooseObjectTask("add_interpolation_method_physics", FVInterpolationMethod,     false);
+  registerMooseObjectTask("add_linear_fv_kernel",             LinearFVKernel,            false);
+  registerMooseObjectTask("add_fv_bc",                        FVBoundaryCondition,       false);
+  registerMooseObjectTask("add_linear_fv_bc",                 LinearFVBoundaryCondition, false);
+  registerMooseObjectTask("add_fv_ik",                        FVInterfaceKernel,         false);
+  registerMooseObjectTask("add_interface_kernel",             InterfaceKernel,           false);
+  appendMooseObjectTask  ("add_interface_kernel",             VectorInterfaceKernel);
+  registerMooseObjectTask("add_constraint",                   Constraint,                false);
+  registerMooseObjectTask("add_hybridized_kernel",            HDGKernel,                 false);
+  registerMooseObjectTask("add_hybridized_integrated_bc",     HDGIntegratedBC,           false);
 
-  registerMooseObjectTask("add_ic",                       InitialCondition,          false);
-  appendMooseObjectTask  ("add_ic",                       ScalarInitialCondition);
-  registerMooseObjectTask("add_fv_ic",                    FVInitialCondition,        false);
-  registerMooseObjectTask("add_ics_physics",              InitialCondition,          false);
-  appendMooseObjectTask  ("add_ics_physics",              FVInitialCondition);
-  appendMooseObjectTask  ("add_ics_physics",              ScalarInitialCondition);
+  registerMooseObjectTask("add_ic",                           InitialCondition,          false);
+  appendMooseObjectTask  ("add_ic",                           ScalarInitialCondition);
+  registerMooseObjectTask("add_fv_ic",                        FVInitialCondition,        false);
+  registerMooseObjectTask("add_ics_physics",                  InitialCondition,          false);
+  appendMooseObjectTask  ("add_ics_physics",                  FVInitialCondition);
+  appendMooseObjectTask  ("add_ics_physics",                  ScalarInitialCondition);
 
-  registerMooseObjectTask("add_damper",                   Damper,                    false);
-  registerMooseObjectTask("setup_predictor",              Predictor,                 false);
-  registerMooseObjectTask("add_time_steppers",            TimeStepper,               false);
-  registerMooseObjectTask("add_time_stepper",             TimeStepper,               false);
+  registerMooseObjectTask("add_damper",                       Damper,                    false);
+  registerMooseObjectTask("setup_predictor",                  Predictor,                 false);
+  registerMooseObjectTask("add_time_steppers",                TimeStepper,               false);
+  registerMooseObjectTask("add_time_stepper",                 TimeStepper,               false);
   registerTask           ("compose_time_stepper",                                    true);
-  registerMooseObjectTask("setup_time_integrators",       TimeIntegrator,            false);
-  registerMooseObjectTask("setup_time_integrator",        TimeIntegrator,            false);
-  registerMooseObjectTask("add_convergence",              Convergence,            false);
+  registerMooseObjectTask("setup_time_integrators",           TimeIntegrator,            false);
+  registerMooseObjectTask("setup_time_integrator",            TimeIntegrator,            false);
+  registerMooseObjectTask("add_convergence",                  Convergence,               false);
 
-  registerMooseObjectTask("add_preconditioning",          MoosePreconditioner,       false);
-  registerMooseObjectTask("add_field_split",              Split,                     false);
+  registerMooseObjectTask("add_preconditioning",              MoosePreconditioner,       false);
+  registerMooseObjectTask("add_field_split",                  Split,                     false);
 
-  registerMooseObjectTask("add_mesh_division",            MeshDivision,              false);
-  registerMooseObjectTask("add_user_object",              UserObject,                false);
-  appendMooseObjectTask  ("add_user_object",              Postprocessor);
+  registerMooseObjectTask("add_mesh_division",                MeshDivision,              false);
+  registerMooseObjectTask("add_user_object",                  UserObject,                false);
+  appendMooseObjectTask  ("add_user_object",                  Postprocessor);
 
-  appendDeprecatedMooseObjectTask("add_user_object",      Corrector);
-  registerMooseObjectTask("add_corrector",                Corrector,                 false);
-  appendDeprecatedMooseObjectTask("add_user_object",      MeshModifier);
-  registerMooseObjectTask("add_mesh_modifier",            MeshModifier,              false);
+  appendDeprecatedMooseObjectTask("add_user_object",          Corrector);
+  registerMooseObjectTask("add_corrector",                    Corrector,                 false);
+  appendDeprecatedMooseObjectTask("add_user_object",          MeshModifier);
+  registerMooseObjectTask("add_mesh_modifier",                MeshModifier,              false);
 
-  registerMooseObjectTask("add_postprocessor",            Postprocessor,             false);
-  registerMooseObjectTask("add_vector_postprocessor",     VectorPostprocessor,       false);
-  registerMooseObjectTask("add_reporter",                 Reporter,                  false);
+  registerMooseObjectTask("add_postprocessor",                Postprocessor,             false);
+  registerMooseObjectTask("add_vector_postprocessor",         VectorPostprocessor,       false);
+  registerMooseObjectTask("add_reporter",                     Reporter,                  false);
 
-  registerMooseObjectTask("add_positions",                Positions,                 false);
-  registerMooseObjectTask("add_times",                    Times,                     false);
+  registerMooseObjectTask("add_positions",                    Positions,                 false);
+  registerMooseObjectTask("add_times",                        Times,                     false);
 
-  registerMooseObjectTask("add_indicator",                Indicator,                 false);
-  registerMooseObjectTask("add_marker",                   Marker,                    false);
+  registerMooseObjectTask("add_indicator",                    Indicator,                 false);
+  registerMooseObjectTask("add_marker",                       Marker,                    false);
 
-  registerMooseObjectTask("add_multi_app",                MultiApp,                  false);
-  registerMooseObjectTask("add_transfer",                 Transfer,                  false);
+  registerMooseObjectTask("add_multi_app",                    MultiApp,                  false);
+  registerMooseObjectTask("add_transfer",                     Transfer,                  false);
 
-  registerMooseObjectTask("add_output",                   Output,                    false);
+  registerMooseObjectTask("add_output",                       Output,                    false);
 
-  registerMooseObjectTask("add_control",                  Control,                   false);
-  registerMooseObjectTask("add_chain_control",            ChainControl,              false);
-  registerMooseObjectTask("add_partitioner",              MoosePartitioner,          false);
+  registerMooseObjectTask("add_control",                      Control,                   false);
+  registerMooseObjectTask("add_chain_control",                ChainControl,              false);
+  registerMooseObjectTask("add_partitioner",                  MoosePartitioner,          false);
 
   // clang-format on
 
@@ -432,7 +469,7 @@ addActionTypes(Syntax & syntax)
                            "(declare_late_reporters)"
                            "(add_aux_kernel, add_bc, add_damper, add_dirac_kernel, add_kernel,"
                            " add_nodal_kernel, add_dg_kernel, add_fv_kernel, add_interpolation_method,"
-                           " add_linear_fv_kernel,"
+                           " add_interpolation_method_physics, add_linear_fv_kernel,"
                            " add_fv_bc, add_linear_fv_bc, add_fv_ik, add_interface_kernel,"
                            " add_scalar_kernel, add_aux_scalar_kernel, add_indicator, add_marker,"
                            " add_bound, add_hybridized_kernel, add_hybridized_integrated_bc)"
@@ -473,10 +510,27 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_mfem_fespaces", MFEMFESpace, false);
   appendMooseObjectTask("add_mfem_fespaces", MFEMFECollection);
   addTaskDependency("add_mfem_fespaces", "add_mfem_submeshes");
-  addTaskDependency("add_variable", "add_mfem_fespaces");
-  addTaskDependency("add_aux_variable", "add_mfem_fespaces");
-  addTaskDependency("add_elemental_field_variable", "add_mfem_fespaces");
+
+  // add FESpace hierarchies (must come after fespaces so the base fespace is available)
+  registerMooseObjectTask("add_mfem_fespace_hierarchies", MFEMFESpaceHierarchy, false);
+  addTaskDependency("add_mfem_fespace_hierarchies", "add_mfem_fespaces");
+
+  // variables must wait for hierarchies since a variable may reference a hierarchy's
+  // finest level via fespace_hierarchy = ...
+  addTaskDependency("add_variable", "add_mfem_fespace_hierarchies");
+  addTaskDependency("add_aux_variable", "add_mfem_fespace_hierarchies");
+  addTaskDependency("add_elemental_field_variable", "add_mfem_fespace_hierarchies");
+  // kernels only need fespaces, not hierarchies
   addTaskDependency("add_kernel", "add_mfem_fespaces");
+
+  // add QuadratureFunctions
+  registerMooseObjectTask("add_mfem_quadrature_functions", MFEMQuadratureFunction, false);
+  // after the last task declaring coefficients the quadrature functions may project
+  addTaskDependency("add_mfem_quadrature_functions", "add_functor_material");
+  // before the tasks constructing objects that may consume the declared coefficients
+  addTaskDependency("add_kernel", "add_mfem_quadrature_functions");
+  addTaskDependency("add_bc", "add_mfem_quadrature_functions");
+  addTaskDependency("add_aux_kernel", "add_mfem_quadrature_functions");
 
   // add complex kernels
   registerMooseObjectTask("add_mfem_complex_kernel_components", Kernel, false);
@@ -491,18 +545,25 @@ addActionTypes(Syntax & syntax)
   addTaskDependency("set_mesh_fe_space", "add_variable");
   addTaskDependency("set_mesh_fe_space", "init_mesh");
 
-  // add preconditioning.
-  registerMooseObjectTask("add_mfem_preconditioner", Moose::MFEM::SolverBase, false);
-  addTaskDependency("add_mfem_preconditioner", "add_mfem_problem_operator");
-  addTaskDependency("add_mfem_preconditioner", "add_variable");
-
   // add solver objects.
   registerMooseObjectTask("add_mfem_solver", Moose::MFEM::SolverBase, true);
-  addTaskDependency("add_mfem_solver", "add_mfem_preconditioner");
+  addTaskDependency("add_mfem_solver", "add_mfem_fespace_hierarchies");
   addTaskDependency("add_mfem_solver", "add_mfem_problem_operator");
+  addTaskDependency("add_mfem_solver", "add_variable");
+  registerTask("resolve_mfem_solvers", true);
+  addTaskDependency("resolve_mfem_solvers", "add_mfem_solver");
+  addTaskDependency("init_problem", "resolve_mfem_solvers");
+
+  // indicators/estimators before markers
+  addTaskDependency("add_marker", "add_indicator");
 #endif
 
-  // Linear FV kernels fetch FVInterpolationMethod instances in their constructors
+  // Linear FV kernels fetch FVInterpolationMethod instances in their constructors. Some Physics
+  // add linear FV kernels on the generic FV kernel task.
+  addTaskDependency("add_interpolation_method_physics", "add_interpolation_method");
+  addTaskDependency("add_fv_kernel", "add_interpolation_method_physics");
+  addTaskDependency("add_linear_fv_kernel", "add_interpolation_method_physics");
+  addTaskDependency("add_fv_kernel", "add_interpolation_method");
   addTaskDependency("add_linear_fv_kernel", "add_interpolation_method");
 
   registerTask("parse_neml2", /*required=*/false);
@@ -771,10 +832,13 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntaxTask("AddMFEMSubMeshAction", "SubMeshes/*", "add_mfem_submeshes");
   registerSyntaxTask("AddMFEMFESpaceAction", "FESpaces/*", "add_mfem_fespaces");
   registerSyntaxTask(
+      "AddMFEMQuadratureFunctionAction", "QuadratureFunctions/*", "add_mfem_quadrature_functions");
+  registerSyntaxTask(
+      "AddMFEMFESpaceHierarchyAction", "FESpaceHierarchies/*", "add_mfem_fespace_hierarchies");
+  registerSyntaxTask(
       "AddMFEMComplexKernelComponentAction", "Kernels/*/*", "add_mfem_complex_kernel_components");
   registerSyntaxTask(
       "AddMFEMComplexBCComponentAction", "BCs/*/*", "add_mfem_complex_bc_components");
-  registerSyntaxTask("AddMFEMPreconditionerAction", "Preconditioner/*", "add_mfem_preconditioner");
   registerSyntaxTask("AddMFEMSolverAction", "Solvers/*", "add_mfem_solver");
   syntax.registerSyntaxType("Solvers/*", "MFEMSolverName");
 #endif
@@ -863,7 +927,7 @@ bool _warnings_are_errors = false;
 bool _deprecated_is_error = false;
 bool _throw_on_error = false;
 bool _throw_on_warning = false;
-int interrupt_signal_number = 0;
+volatile std::sig_atomic_t interrupt_signal_number = 0;
 bool show_multiple = false;
 
 } // namespace Moose
