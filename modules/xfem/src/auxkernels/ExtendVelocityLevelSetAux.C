@@ -22,11 +22,11 @@ ExtendVelocityLevelSetAux::validParams()
       "qp_point_value_user_object",
       "Name of QpPointValueAtXFEMInterface that gives values at Qp points along an interface.");
 
-  params.addRequiredParam<Real>("diffusivity_positive",
-                                "Diffusion coefficient on the positive level set side");
+  params.addRequiredParam<PostprocessorName>("diffusivity_positive",
+                                             "Postprocessor supplying the positive-side diffusivity");
 
-  params.addRequiredParam<Real>("diffusivity_negative",
-                                "Diffusion coefficient on the negative level set side");
+  params.addRequiredParam<PostprocessorName>("diffusivity_negative",
+                                             "Postprocessor supplying the negative-side diffusivity");
 
   params.addParam<Real>("scale_factor",
                          1.0,
@@ -46,8 +46,8 @@ ExtendVelocityLevelSetAux::ExtendVelocityLevelSetAux(const InputParameters & par
     _qp_value_uo(getUserObjectByName<QpPointValueAtXFEMInterface>(
         getParam<UserObjectName>("qp_point_value_user_object"))),
 
-    _D_pos(getParam<Real>("diffusivity_positive")),
-    _D_neg(getParam<Real>("diffusivity_negative")),
+    _D_pos(getPostprocessorValue("diffusivity_positive")),
+    _D_neg(getPostprocessorValue("diffusivity_negative")),
 
     _scale_factor(getParam<Real>("scale_factor")),
     _model_type(getParam<MooseEnum>("model_type").template getEnum<model_type>())
@@ -137,16 +137,19 @@ ExtendVelocityLevelSetAux::computeValue()
 
     case model_type::Stefan:
     {
-      Real V_m = (2*106.42 + 28.085) / 9.59  * 1.0e-6;  // [m^3/mol] Pd2Si molar volume
-      Real mol_frac = 2.0 / 3.0;                        // [mol/mol] Molar fraction of Pd in Pd2Si
+      Real V_m_fu   = (2*106.42 + 28.085) / 9.59 * 1.0e-6;  // Pd2Si molar volume [m^3/mol]
+      Real n_Pd_fu  = 2.0;                                   // Pd atoms per Pd2Si
+      Real jump_c   = n_Pd_fu / V_m_fu;                      // concentration jump [mol/m^3]
 
       Real flux_pos1 = -_D_pos * (_grad_values_positive_level_set_side[index1] * _level_set_normal[index1]);
       Real flux_neg1 = -_D_neg * (_grad_values_negative_level_set_side[index1] * _level_set_normal[index1]);
-      Real vel1 = V_m / mol_frac * (flux_pos1 + flux_neg1);
+      // Real vel1 = V_m / mol_frac * (flux_pos1 + flux_neg1);
+      Real vel1 = -flux_neg1 / jump_c;
 
       Real flux_pos2 = -_D_pos * (_grad_values_positive_level_set_side[index2] * _level_set_normal[index2]);
       Real flux_neg2 = -_D_neg * (_grad_values_negative_level_set_side[index2] * _level_set_normal[index2]);
-      Real vel2 = V_m / mol_frac * (flux_pos2 + flux_neg2);
+      // Real vel2 = V_m / mol_frac * (flux_pos2 + flux_neg2);
+      Real vel2 = -flux_neg2 / jump_c;
 
       vel = w1 * vel1 + w2 * vel2;
       vel *= _scale_factor;
@@ -157,6 +160,6 @@ ExtendVelocityLevelSetAux::computeValue()
       mooseError("Invalid model type.");
   }
 
-  std::cout << "vel = " << vel << std::endl;
+  // std::cout << "vel = " << vel << std::endl;
   return vel;
 }

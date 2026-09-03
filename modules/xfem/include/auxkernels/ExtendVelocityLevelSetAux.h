@@ -31,8 +31,8 @@ protected:
   const QpPointValueAtXFEMInterface & _qp_value_uo;
 
   /// Diffusion coefficients
-  Real _D_pos;
-  Real _D_neg;
+  const PostprocessorValue & _D_pos;
+  const PostprocessorValue & _D_neg;
 
   /// Scalar multiplier applied to the computed velocity
   Real _scale_factor;
