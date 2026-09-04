@@ -111,6 +111,8 @@ public:
 
   ~XFEM();
 
+  std::set<unsigned int> getNewNodes() const { return _saved_new_nodes; };
+
   void addGeometricCut(GeometricCutUserObject * geometric_cut);
 
   void addStateMarkedElem(unsigned int elem_id, RealVectorValue & normal);
@@ -180,6 +182,10 @@ public:
    * Get the volume fraction of an element that is physical
    */
   Real getPhysicalVolumeFraction(const Elem * elem) const;
+
+  Point getPhysicalCenterPoint(const Elem * elem) const;
+
+  Real getCutPlaneArea(const Elem * elem) const;
 
   /**
    * Return true if the point is inside the element physical domain
@@ -358,6 +364,9 @@ private:
 
   /// Data structure for storing the GeommetricCutUserObjects and their corresponding id
   std::map<const GeometricCutUserObject *, unsigned int> _geom_marker_id_map;
+
+  std::set<unsigned int> _saved_new_nodes;
+  std::set<unsigned int> _saved_old_nodes;
 
   ElementFragmentAlgorithm _efa_mesh;
 

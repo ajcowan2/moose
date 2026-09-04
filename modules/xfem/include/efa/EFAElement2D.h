@@ -79,6 +79,7 @@ public:
   virtual void
   connectNeighbors(std::map<unsigned int, EFANode *> & PermanentNodes,
                    std::map<unsigned int, EFANode *> & TempNodes,
+                   std::set<unsigned int> & ReplacedNodes,
                    std::map<EFANode *, std::set<EFAElement *>> & InverseConnectivityMap,
                    bool merge_phantom_edges);
   virtual void printElement(std::ostream & ostream) const;

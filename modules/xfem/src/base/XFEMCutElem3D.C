@@ -229,6 +229,49 @@ XFEMCutElem3D::getCutPlaneNormal(unsigned int plane_id, MeshBase * displaced_mes
 }
 
 void
+XFEMCutElem3D::getCutPlaneNormals(unsigned int plane_id,
+                                  std::vector<Point> & normals,
+                                  MeshBase * displaced_mesh) const
+{
+  normals.clear();
+  std::vector<std::vector<EFANode *>> cut_plane_nodes;
+  for (unsigned int i = 0; i < _efa_elem3d.getFragment(0)->numFaces(); ++i)
+  {
+    if (_efa_elem3d.getFragment(0)->isFaceInterior(i))
+    {
+      EFAFace * face = _efa_elem3d.getFragment(0)->getFace(i);
+      std::vector<EFANode *> node_line;
+      for (unsigned int j = 0; j < face->numNodes(); ++j)
+        node_line.push_back(face->getNode(j));
+      cut_plane_nodes.push_back(node_line);
+    }
+  }
+  if (cut_plane_nodes.size() == 0)
+    mooseError("no cut plane found in this element");
+  if (plane_id < cut_plane_nodes.size()) // valid plane_id
+  {
+    std::vector<Point> cut_plane_points;
+    for (unsigned int i = 0; i < cut_plane_nodes[plane_id].size(); ++i)
+      cut_plane_points.push_back(getNodeCoordinates(cut_plane_nodes[plane_id][i], displaced_mesh));
+
+    Point center(0.0, 0.0, 0.0);
+    for (unsigned int i = 0; i < cut_plane_points.size(); ++i)
+      center += cut_plane_points[i];
+    center /= cut_plane_points.size();
+
+    for (unsigned int i = 0; i < cut_plane_points.size(); ++i)
+    {
+      unsigned int iplus1 = i < cut_plane_points.size() - 1 ? i + 1 : 0;
+      Point ray1 = cut_plane_points[i] - center;
+      Point ray2 = cut_plane_points[iplus1] - center;
+      normals.push_back(ray1.cross(ray2));
+    }
+  }
+  for (unsigned int i = 0; i < normals.size(); ++i)
+    Xfem::normalizePoint(normals[i]);
+}
+
+void
 XFEMCutElem3D::getCrackTipOriginAndDirection(unsigned /*tip_id*/,
                                              Point & /*origin*/,
                                              Point & /*direction*/) const
@@ -261,6 +304,36 @@ XFEMCutElem3D::numCutPlanes() const
   return counter;
 }
 
+Point
+XFEMCutElem3D::getFragmentCenterPoint()
+{
+  Point cp;
+  // Get the coords for parial element nodes
+  std::vector<std::vector<unsigned int>> frag_face_indices;
+  std::vector<EFANode *> frag_nodes;
+  _efa_elem3d.getFragment(0)->getNodeInfo(frag_face_indices, frag_nodes);
+  int face_num = frag_face_indices.size();
+
+  int order_max = 0;
+  int * order = new int[face_num];
+  for (int i = 0; i < face_num; ++i)
+  {
+    if (frag_face_indices[i].size() > (unsigned int)order_max)
+      order_max = frag_face_indices[i].size();
+    order[i] = frag_face_indices[i].size();
+  }
+
+  for (unsigned int i = 0; i < frag_nodes.size(); ++i)
+  {
+    Point p = getNodeCoordinates(frag_nodes[i]);
+    cp(0) += p(0) / frag_nodes.size();
+    cp(1) += p(1) / frag_nodes.size();
+    cp(2) += p(2) / frag_nodes.size();
+  }
+
+  return cp;
+}
+
 void
 XFEMCutElem3D::getIntersectionInfo(unsigned int plane_id,
                                    Point & normal,
@@ -291,4 +364,37 @@ XFEMCutElem3D::getIntersectionInfo(unsigned int plane_id,
   }
 
   normal = getCutPlaneNormal(plane_id, displaced_mesh);
+}
+
+Real
+XFEMCutElem3D::getCutPlaneArea() const
+{
+  std::vector<Point> intersectionPoints;
+  Point normal;
+  getIntersectionInfo(0, normal, intersectionPoints, NULL);
+  Real area = 0.0;
+
+  std::size_t nnd_pe = intersectionPoints.size();
+  Point xcrd(0.0, 0.0, 0.0);
+  for (std::size_t i = 0; i < nnd_pe; ++i)
+    xcrd += intersectionPoints[i];
+  xcrd /= nnd_pe;
+
+  for (std::size_t j = 0; j < nnd_pe; ++j) // loop all sub-tris
+  {
+    std::vector<Point> subtrig_points(3, Point(0.0, 0.0, 0.0)); // sub-trig nodal coords
+
+    int jplus1 = j < nnd_pe - 1 ? j + 1 : 0;
+    subtrig_points[0] = xcrd;
+    subtrig_points[1] = intersectionPoints[j];
+    subtrig_points[2] = intersectionPoints[jplus1];
+
+    Point ab = subtrig_points[1] - subtrig_points[0];
+    Point ac = subtrig_points[2] - subtrig_points[0];
+
+    Point cross_prod = ab.cross(ac);
+    area += 0.5 * cross_prod.norm();
+  }
+
+  return area;
 }

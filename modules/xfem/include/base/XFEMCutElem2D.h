@@ -45,8 +45,15 @@ public:
   virtual void computePhysicalVolumeFraction();
   virtual void computePhysicalFaceAreaFraction(unsigned int side);
   virtual void computeMomentFittingWeights();
-  virtual Point getCutPlaneOrigin(unsigned int plane_id, MeshBase * displaced_mesh = nullptr) const;
-  virtual Point getCutPlaneNormal(unsigned int plane_id, MeshBase * displaced_mesh = nullptr) const;
+  virtual Real getCutPlaneArea() const;
+  virtual Point getCutPlaneOrigin(unsigned int plane_id, MeshBase * displaced_mesh = NULL) const;
+  virtual Point getCutPlaneNormal(unsigned int plane_id, MeshBase * displaced_mesh = NULL) const;
+  virtual void getCutPlaneNormals(unsigned int plane_id,
+                                  std::vector<Point> & normals,
+                                  MeshBase * displaced_mesh = NULL) const
+  {
+    normals.clear();
+  };
   virtual void
   getCrackTipOriginAndDirection(unsigned tip_id, Point & origin, Point & direction) const;
   virtual void getFragmentFaces(std::vector<std::vector<Point>> & frag_faces,
@@ -57,6 +64,7 @@ public:
                                    Point & normal,
                                    std::vector<Point> & intersectionPoints,
                                    MeshBase * displaced_mesh = nullptr) const;
+  virtual Point getFragmentCenterPoint();
 
 private:
   void getPhysicalQuadraturePoints(std::vector<std::vector<Real>> & tsg);

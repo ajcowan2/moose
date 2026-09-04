@@ -243,7 +243,8 @@ EFAElement::mergeNodes(EFANode *& childNode,
                        EFANode *& childOfNeighborNode,
                        EFAElement * childOfNeighborElem,
                        std::map<unsigned int, EFANode *> & PermanentNodes,
-                       std::map<unsigned int, EFANode *> & TempNodes)
+                       std::map<unsigned int, EFANode *> & TempNodes,
+                       std::set<unsigned int> & ReplacedNodes)
 {
   // Important: this must be run only on child elements that were just created
   if (!_parent)
@@ -266,6 +267,9 @@ EFAElement::mergeNodes(EFANode *& childNode,
                      " from PermanentNodes, but couldn't find it");
           }
           childOfNeighborNode = childNode;
+
+          if (childOfNeighborNode->parent() == NULL)
+            ReplacedNodes.insert(childOfNeighborNode->id());
         }
         else if (childNode->parent() == childOfNeighborNode) // merge into childOfNeighborNode
         {
@@ -277,6 +281,9 @@ EFAElement::mergeNodes(EFANode *& childNode,
                      " from PermanentNodes, but couldn't find it");
           }
           childNode = childOfNeighborNode;
+
+          if (childOfNeighborNode->parent() == NULL)
+            ReplacedNodes.insert(childOfNeighborNode->id());
         }
         else if (childNode->parent() != nullptr &&
                  childNode->parent() == childOfNeighborNode->parent())
@@ -291,6 +298,9 @@ EFAElement::mergeNodes(EFANode *& childNode,
                      " from PermanentNodes, but couldn't find it");
           }
           childOfNeighborNode = childNode;
+
+          if (childOfNeighborNode->parent() == NULL)
+            ReplacedNodes.insert(childOfNeighborNode->id());
         }
         else
         {
@@ -303,6 +313,12 @@ EFAElement::mergeNodes(EFANode *& childNode,
       }
       else
       {
+        // std::cout << "==================BEFORE=====================" << std::endl;
+        // std::cout << "childNode = " << childNode->category() << ", id = " << childNode->id()
+        //           << std::endl;
+        // std::cout << "childOfNeighborNode = " << childOfNeighborNode->category()
+        //           << ", id = " << childOfNeighborNode->id() << std::endl;
+
         if (childOfNeighborNode->parent() != childNode &&
             childOfNeighborNode->parent() != childNode->parent())
         {
@@ -318,6 +334,15 @@ EFAElement::mergeNodes(EFANode *& childNode,
                    childOfNeighborNode->id(),
                    " from TempNodes, but couldn't find it");
         childOfNeighborNode = childNode;
+
+        if (childOfNeighborNode->parent() == NULL)
+          ReplacedNodes.insert(childOfNeighborNode->id());
+
+        // std::cout << "==================AFTER=====================" << std::endl;
+        // std::cout << "childNode = " << childNode->category() << ", id = " << childNode->id()
+        //           << std::endl;
+        // std::cout << "childOfNeighborNode = " << childOfNeighborNode->category()
+        //           << ", id = " << childOfNeighborNode->id() << std::endl;
       }
     }
     else if (childOfNeighborNode->category() == EFANode::N_CATEGORY_PERMANENT)
@@ -336,6 +361,9 @@ EFAElement::mergeNodes(EFANode *& childNode,
         EFAError(
             "Attempted to delete node: ", childNode->id(), " from TempNodes, but couldn't find it");
       childNode = childOfNeighborNode;
+
+      if (childNode->parent() == NULL)
+        ReplacedNodes.insert(childNode->id());
     }
     else // both nodes are temporary -- create new permanent node and delete temporary nodes
     {

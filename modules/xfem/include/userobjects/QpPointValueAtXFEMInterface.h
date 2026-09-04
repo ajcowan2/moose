@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://mooseframework.inl.gov
+//* https://www.mooseframework.org
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -12,19 +12,19 @@
 #include "GeneralUserObject.h"
 #include "ElementPairLocator.h"
 #include "MooseVariableFE.h"
-#include "LevelSetCutUserObject.h"
+#include "GeometricCutUserObject.h"
 
 class XFEM;
 class InterfaceMeshCutUserObjectBase;
 
-class NodeValueAtXFEMInterface : public GeneralUserObject
+class QpPointValueAtXFEMInterface : public GeneralUserObject
 {
 public:
   static InputParameters validParams();
 
-  NodeValueAtXFEMInterface(const InputParameters & parameters);
+  QpPointValueAtXFEMInterface(const InputParameters & parameters);
 
-  virtual ~NodeValueAtXFEMInterface() {}
+  virtual ~QpPointValueAtXFEMInterface() {}
 
   virtual void initialize() override;
   virtual void execute() override;
@@ -62,7 +62,11 @@ public:
     return _grad_values_negative_level_set_side;
   };
 
-  unsigned int numberNodes() const { return _nodes.size(); };
+  std::map<unsigned int, RealVectorValue> getLevelSetNormal() const { return _level_set_normal; };
+
+  unsigned int numberNodes() const { return _qp_points.size(); };
+
+  std::map<unsigned int, Point> getQpPoint() const { return _qp_points; };
 
 protected:
   /**
@@ -72,16 +76,16 @@ protected:
    * @return The Elem containing the point or NULL if this processor doesn't contain an element that
    * contains this point.
    */
-  const Elem * getElemContainingPoint(const Node & p, bool positive_level_set);
+  const Elem * getElemContainingPoint(const Point & p, bool positive_level_set);
 
   /// The computation mesh
   MooseMesh & _mesh;
 
-  /// The nodes to evaluate at
-  std::vector<Point> _nodes;
+  /// The qp points to evaluate at
+  std::map<unsigned int, Point> _qp_points;
 
   /// Pointer to PointLocatorBase object
-  std::unique_ptr<libMesh::PointLocatorBase> _pl;
+  std::unique_ptr<PointLocatorBase> _pl;
 
   /// Pointer to the XFEM controller object
   std::shared_ptr<XFEM> _xfem;
@@ -90,19 +94,19 @@ protected:
   const ElementPairLocator::ElementPairList * _elem_pairs;
 
   /// Pointer to LineSegmentCutSetUserObject object
-  const InterfaceMeshCutUserObjectBase * _mesh_cut;
-
-  /// Pointer to LevelSetCutUserObject object
-   const LevelSetCutUserObject * _level_set_cut;
+  const GeometricCutUserObject * _mesh_cut;
 
   /// Pointer to MooseVariableFEBase object
   MooseVariableFEBase * _var;
+
+  /// Pointer to MooseVariableFEBase object
+  MooseVariableFEBase * _var_level_set;
 
   /// The variable number of the level set variable we are operating on
   const unsigned int _level_set_var_number;
 
   /// System reference
-  const libMesh::System & _system;
+  const System & _system;
 
   /// The subproblem solution vector
   const NumericVector<Number> & _solution;
@@ -118,4 +122,7 @@ protected:
 
   /// Mapping from point index and its gradient at the negative level set side
   std::map<unsigned int, RealVectorValue> _grad_values_negative_level_set_side;
+
+  /// Mapping from point index and its gradient at the negative level set side
+  std::map<unsigned int, RealVectorValue> _level_set_normal;
 };
