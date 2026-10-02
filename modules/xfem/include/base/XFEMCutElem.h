@@ -76,6 +76,8 @@ public:
    */
   virtual void computePhysicalFaceAreaFraction(unsigned int side) = 0;
 
+  virtual Real getCutPlaneArea() const = 0;
+
   /**
    * Returns the surface area fraction of the element side
    * @param side The side of the element
@@ -87,7 +89,10 @@ public:
   virtual Point getCutPlaneOrigin(unsigned int plane_id,
                                   MeshBase * displaced_mesh = nullptr) const = 0;
   virtual Point getCutPlaneNormal(unsigned int plane_id,
-                                  MeshBase * displaced_mesh = nullptr) const = 0;
+                                  MeshBase * displaced_mesh = NULL) const = 0;
+  virtual void getCutPlaneNormals(unsigned int plane_id,
+                                  std::vector<Point> & normals,
+                                  MeshBase * displaced_mesh = NULL) const = 0;
   virtual void
   getCrackTipOriginAndDirection(unsigned tip_id, Point & origin, Point & direction) const = 0;
   virtual void getFragmentFaces(std::vector<std::vector<Point>> & frag_faces,

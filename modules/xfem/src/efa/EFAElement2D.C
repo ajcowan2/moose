@@ -1175,6 +1175,7 @@ EFAElement2D::removePhantomEmbeddedNode()
 void
 EFAElement2D::connectNeighbors(std::map<unsigned int, EFANode *> & PermanentNodes,
                                std::map<unsigned int, EFANode *> & TempNodes,
+                               std::set<unsigned int> & ReplacedNodes,
                                std::map<EFANode *, std::set<EFAElement *>> & InverseConnectivityMap,
                                bool merge_phantom_edges)
 {
@@ -1218,15 +1219,23 @@ EFAElement2D::connectNeighbors(std::map<unsigned int, EFANode *> & PermanentNode
               EFANode * childNode = _edges[j]->getNode(childNodeIndex);
               EFANode * childOfNeighborNode = neighborChildEdge->getNode(neighborChildNodeIndex);
 
-              mergeNodes(
-                  childNode, childOfNeighborNode, childOfNeighborElem, PermanentNodes, TempNodes);
+              mergeNodes(childNode,
+                         childOfNeighborNode,
+                         childOfNeighborElem,
+                         PermanentNodes,
+                         TempNodes,
+                         ReplacedNodes);
             }
 
             EFANode * childNode = _edges[j]->getInteriorNode();
             EFANode * childOfNeighborNode = neighborChildEdge->getInteriorNode();
 
-            mergeNodes(
-                childNode, childOfNeighborNode, childOfNeighborElem, PermanentNodes, TempNodes);
+            mergeNodes(childNode,
+                       childOfNeighborNode,
+                       childOfNeighborElem,
+                       PermanentNodes,
+                       TempNodes,
+                       ReplacedNodes);
           }
         } // l, loop over NeighborElem's children
       }
@@ -1265,7 +1274,8 @@ EFAElement2D::connectNeighbors(std::map<unsigned int, EFANode *> & PermanentNode
                              childOfNeighborNode,
                              childOfNeighborElem,
                              PermanentNodes,
-                             TempNodes);
+                             TempNodes,
+                             ReplacedNodes);
               } // i
             }
           } // loop over NeighborElem's children

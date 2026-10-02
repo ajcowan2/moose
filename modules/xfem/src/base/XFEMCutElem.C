@@ -193,18 +193,63 @@ bool
 XFEMCutElem::isPointPhysical(const Point & p) const
 {
   // determine whether the point is inside the physical domain of a partial element
-  bool physical_flag = true;
+  bool physical_flag = false;
+  std::vector<Point> normals;
   unsigned int n_cut_planes = numCutPlanes();
   for (unsigned int plane_id = 0; plane_id < n_cut_planes; ++plane_id)
   {
     Point origin = getCutPlaneOrigin(plane_id);
-    Point normal = getCutPlaneNormal(plane_id);
+    getCutPlaneNormals(plane_id, normals);
     Point origin2qp = p - origin;
-    if (origin2qp * normal > 0.0)
+
+    // std::cout << "origin2qp = " << origin2qp << ", origin = " << origin
+    //           << ", normal = " << normals[0] << std::endl;
+
+    // if ((p - Point(0.006, 0.006, 0.008)).norm() < 1.0e-10)
+    // {
+    //   std::cout << "normals size () = " << normals.size() << std::endl;
+    //
+    //   std::cout << "origin2qp = " << origin2qp << ", origin = " << origin << std::endl;
+    //   for (unsigned int i = 0; i < normals.size(); ++i)
+    //     std::cout << i << ", "
+    //               << "prod = " << origin2qp * normals[i] << ", normal = " << normals[i]
+    //               << std::endl;
+    // }
+
+    bool use_temp = false;
+    for (unsigned int k = 0; k < normals.size(); ++k)
+      if (origin2qp * normals[k] > 1.0e-10)
+      {
+        use_temp = true;
+        break;
+      }
+
+    if (!use_temp)
     {
-      physical_flag = false; // Point outside pysical domain
+      physical_flag = true; // Point outside pysical domain
       break;
     }
   }
+
+  // if ((p - Point(0.006, 0.006, 0.008)).norm() < 1.0e-10)
+  //   std::cout << "physical_flag = " << physical_flag << std::endl;
+
   return physical_flag;
+  // determine whether the point is inside the physical domain of a partial element
+  // bool physical_flag = true;
+  // unsigned int n_cut_planes = numCutPlanes();
+  // for (unsigned int plane_id = 0; plane_id < n_cut_planes; ++plane_id)
+  //
+  // {
+  //   Point origin = getCutPlaneOrigin(plane_id);
+  //   Point normal = getCutPlaneNormal(plane_id);
+  //   Point origin2qp = p - origin;
+  //   if (origin2qp * normal > 0.0)
+  //
+  //   {
+  //     physical_flag = false; // Point outside pysical domain
+  //     break;
+  //   }
+  // }
+  // return physical_flag;
 }

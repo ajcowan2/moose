@@ -468,3 +468,13 @@ XFEMCutElem2D::getIntersectionInfo(unsigned int plane_id,
 
   normal = getCutPlaneNormal(plane_id, displaced_mesh);
 }
+
+Real
+XFEMCutElem2D::getCutPlaneArea() const
+{
+  std::vector<Point> intersectionPoints;
+  Point normal;
+  getIntersectionInfo(0, normal, intersectionPoints, NULL);
+  Real area = (intersectionPoints[1] - intersectionPoints[0]).norm();
+  return area;
+}

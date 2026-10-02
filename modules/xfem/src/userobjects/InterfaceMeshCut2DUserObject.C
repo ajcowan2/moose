@@ -121,7 +121,9 @@ InterfaceMeshCut2DUserObject::cutElementByGeometry(const Elem * elem,
       }
     }
   }
-  return elem_cut;
+  // WJ
+  return false;
+  // return elem_cut;
 }
 
 bool

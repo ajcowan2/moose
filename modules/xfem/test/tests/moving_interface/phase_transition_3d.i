@@ -74,8 +74,10 @@
     geometric_cut_userobject = 'cut_mesh'
     use_displaced_mesh = false
     variable = u
+    value_neighbor = 2
     value = 2
     alpha = 1e6
+    level_set_var = ls
   []
 []
 

@@ -71,8 +71,8 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
     dof_id_type ls_dof_id_1 = node1->dof_number(_system.number(), _level_set_var_number, 0);
     dof_id_type ls_dof_id_2 = node2->dof_number(_system.number(), _level_set_var_number, 0);
 
-    Number ls_node_1 = _solution(ls_dof_id_1);
-    Number ls_node_2 = _solution(ls_dof_id_2);
+    Number ls_node_1 = _solution(ls_dof_id_1) - 0.5;
+    Number ls_node_2 = _solution(ls_dof_id_2) - 0.5;
 
     if (ls_node_1 * ls_node_2 < 0)
     {
@@ -123,8 +123,8 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
       dof_id_type ls_dof_id_1 = node1->dof_number(_system.number(), _level_set_var_number, 0);
       dof_id_type ls_dof_id_2 = node2->dof_number(_system.number(), _level_set_var_number, 0);
 
-      Number ls_node_1 = _solution(ls_dof_id_1);
-      Number ls_node_2 = _solution(ls_dof_id_2);
+      Number ls_node_1 = _solution(ls_dof_id_1) - 0.5;
+      Number ls_node_2 = _solution(ls_dof_id_2) - 0.5;
 
       if (ls_node_1 * ls_node_2 < 0)
       {
