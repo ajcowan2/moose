@@ -1,3 +1,12 @@
+//* This file is part of the MOOSE framework
+//* https://mooseframework.inl.gov
+//*
+//* All rights reserved, see COPYRIGHT for full restrictions
+//* https://github.com/idaholab/moose/blob/master/COPYRIGHT
+//*
+//* Licensed under LGPL 2.1, please see LICENSE for details
+//* https://www.gnu.org/licenses/lgpl-2.1.html
+
 #ifdef MOOSE_MFEM_ENABLED
 
 #include "ComplexEquationSystem.h"
@@ -97,6 +106,7 @@ ComplexEquationSystem::BuildBilinearForms()
         test_var_name, test_var_name, slf, _cmplx_kernels_map);
     // Assemble
     slf->Assemble();
+    slf->Finalize();
   }
 }
 
@@ -131,6 +141,7 @@ ComplexEquationSystem::BuildMixedBilinearForms()
             coupled_var_name, test_var_name, mslf, _cmplx_kernels_map);
         // Assemble mixed bilinear forms
         mslf->Assemble();
+        mslf->Finalize();
         // Register mixed bilinear forms associated with a single trial variable
         // for the current test variable
         test_mslfs->Register(coupled_var_name, mslf);
@@ -174,9 +185,11 @@ ComplexEquationSystem::ApplyEssentialBCs()
     trial_gf.Update();
 
     // Initial guess for iterative solvers (initial condition or the previous time step solution)
-    static_cast<mfem::Vector &>(trial_gf) = _complex_gfuncs->GetRef(trial_var_name);
+    cast_ref<mfem::Vector &>(trial_gf) = _complex_gfuncs->GetRef(trial_var_name);
 
-    _ess_markers.at(i).SetSize(trial_gf.ParFESpace()->GetParMesh()->bdr_attributes.Max(), 0);
+    // A mesh without boundary elements, such as a periodic one, has no boundary attributes
+    const auto & bdr_attributes = trial_gf.ParFESpace()->GetParMesh()->bdr_attributes;
+    _ess_markers.at(i).SetSize(bdr_attributes.Size() ? bdr_attributes.Max() : 0, 0);
     // Set strongly constrained DoFs of trial_gf on essential boundaries and add markers for all
     // essential boundaries to the _ess_markers array
     ApplyComplexEssentialBC(trial_var_name, trial_gf, _ess_markers.at(i));
@@ -304,7 +317,6 @@ ComplexEquationSystem::FormSystemMatrix(mfem::OperatorHandle & op,
                                         mfem::BlockVector & trueX,
                                         mfem::BlockVector & trueRHS)
 {
-
   // Allocate block operator
   DeleteHBlocks();
   _h_blocks.SetSize(_test_var_names.size(), _trial_var_names.size());
@@ -316,6 +328,7 @@ ComplexEquationSystem::FormSystemMatrix(mfem::OperatorHandle & op,
   for (const auto i : index_range(_test_var_names))
   {
     auto test_var_name = _test_var_names.at(i);
+
     for (const auto j : index_range(_trial_var_names))
     {
       auto trial_var_name = _trial_var_names.at(j);
@@ -323,15 +336,14 @@ ComplexEquationSystem::FormSystemMatrix(mfem::OperatorHandle & op,
       mfem::Vector aux_x, aux_rhs;
       mfem::ParComplexLinearForm aux_lf(_test_pfespaces.at(i));
       std::unique_ptr<mfem::OperatorHandle> aux_a = std::make_unique<mfem::OperatorHandle>();
-      aux_lf = 0.0;
+
       if (test_var_name == trial_var_name)
       {
         mooseAssert(i == j, "Trial and test variables must have the same ordering.");
         auto slf = _slfs.Get(test_var_name);
-        auto clf = _clfs.Get(test_var_name);
         slf->FormLinearSystem(_ess_tdof_lists.at(j),
-                              *(_cmplx_var_ess_constraints.at(j)),
-                              *clf,
+                              *_cmplx_var_ess_constraints.at(j),
+                              *_clfs.Get(test_var_name),
                               *aux_a,
                               aux_x,
                               aux_rhs,
@@ -343,8 +355,8 @@ ComplexEquationSystem::FormSystemMatrix(mfem::OperatorHandle & op,
         auto mslf = _mslfs.Get(test_var_name)->Get(trial_var_name);
         mslf->FormRectangularLinearSystem(_ess_tdof_lists.at(j),
                                           _ess_tdof_lists.at(i),
-                                          *(_cmplx_var_ess_constraints.at(j)),
-                                          aux_lf,
+                                          *_cmplx_var_ess_constraints.at(j),
+                                          aux_lf = 0.,
                                           *aux_a,
                                           aux_x,
                                           aux_rhs);

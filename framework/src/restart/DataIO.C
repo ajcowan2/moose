@@ -25,8 +25,6 @@
 
 #include "mtwist.h"
 
-using namespace libMesh;
-
 template <>
 void
 dataStore<mt_state>(std::ostream & stream, mt_state & foo, void * ctx)
@@ -52,7 +50,7 @@ template <>
 void
 dataStore(std::ostream & stream, VariableName & v, void * context)
 {
-  auto & name = static_cast<std::string &>(v);
+  auto & name = cast_ref<std::string &>(v);
   dataStore(stream, name, context);
 }
 
@@ -60,7 +58,7 @@ template <>
 void
 dataStore(std::ostream & stream, UserObjectName & v, void * context)
 {
-  auto & name = static_cast<std::string &>(v);
+  auto & name = cast_ref<std::string &>(v);
   dataStore(stream, name, context);
 }
 
@@ -87,6 +85,16 @@ dataStore(std::ostream & stream, FEType & v, void * context)
 
   auto p_refinement = v.p_refinement;
   dataStore(stream, p_refinement, context);
+}
+
+template <>
+void
+dataStore(std::ostream & stream, std::vector<bool> & v, void * context)
+{
+  std::size_t size = v.size();
+  dataStore(stream, size, nullptr);
+  for (bool b : v)
+    dataStore(stream, b, context);
 }
 
 template <>
@@ -214,6 +222,12 @@ template <>
 void
 dataStore(std::ostream & stream, torch::Tensor & t, void * context)
 {
+  const bool defined = t.defined();
+  dataStore(stream, defined, nullptr);
+
+  if (!defined)
+    return;
+
   const auto tensor = LibtorchUtils::toCPUContiguous(t);
   mooseAssert(tensor.scalar_type() == at::kDouble,
               "Restart storage currently supports only double tensors.");
@@ -297,7 +311,7 @@ dataStore(std::ostream & stream, const Point & p, void * context)
 void
 dataStore(std::ostream & stream, libMesh::BoundingBox & bbox, void * context)
 {
-  dataStore(stream, static_cast<std::pair<Point, Point> &>(bbox), context);
+  dataStore(stream, cast_ref<std::pair<Point, Point> &>(bbox), context);
 }
 
 template <>
@@ -374,7 +388,7 @@ dataStore(std::ostream & stream,
   // Store the solver package so that we know what vector type to construct
   libMesh::SolverPackage solver_package;
   if (dynamic_cast<libMesh::PetscVector<Number> *>(v.get()))
-    solver_package = PETSC_SOLVERS;
+    solver_package = libMesh::PETSC_SOLVERS;
   else
     mooseError("Can only store unique_ptrs of PetscVectors");
   int solver_package_int = solver_package;
@@ -420,7 +434,7 @@ template <>
 void
 dataLoad(std::istream & stream, VariableName & v, void * context)
 {
-  auto & name = static_cast<std::string &>(v);
+  auto & name = cast_ref<std::string &>(v);
   dataLoad(stream, name, context);
 }
 
@@ -428,7 +442,7 @@ template <>
 void
 dataLoad(std::istream & stream, UserObjectName & v, void * context)
 {
-  auto & name = static_cast<std::string &>(v);
+  auto & name = cast_ref<std::string &>(v);
   dataLoad(stream, name, context);
 }
 
@@ -452,6 +466,21 @@ dataLoad(std::istream & stream, FEType & v, void * context)
 #endif
 
   dataLoad(stream, v.p_refinement, context);
+}
+
+template <>
+void
+dataLoad(std::istream & stream, std::vector<bool> & v, void * context)
+{
+  std::size_t size = 0;
+  dataLoad(stream, size, nullptr);
+  v.resize(size);
+  for (std::size_t i = 0; i < size; i++)
+  {
+    bool b;
+    dataLoad(stream, b, context);
+    v[i] = b;
+  }
 }
 
 template <>
@@ -575,6 +604,14 @@ template <>
 void
 dataLoad(std::istream & stream, torch::Tensor & t, void * context)
 {
+  bool defined = false;
+  dataLoad(stream, defined, nullptr);
+  if (!defined)
+  {
+    t = torch::Tensor(); // undefined tensor
+    return;
+  }
+
   unsigned int rank = 0;
   dataLoad(stream, rank, nullptr);
 
@@ -664,7 +701,7 @@ dataLoad(std::istream & stream, Point & p, void * context)
 void
 dataLoad(std::istream & stream, libMesh::BoundingBox & bbox, void * context)
 {
-  dataLoad(stream, static_cast<std::pair<Point, Point> &>(bbox), context);
+  dataLoad(stream, cast_ref<std::pair<Point, Point> &>(bbox), context);
 }
 
 template <>

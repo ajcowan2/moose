@@ -1277,7 +1277,7 @@ TEST(CSGBaseTest, testUseSurfEngUnit)
   ASSERT_EQ("(-polygon_unit)", infixJSONToString(pre_reg.toInfixJSON()));
 
   // surface should be exactly the polygon unit
-  ASSERT_TRUE(static_cast<const CSGSurface &>(poly) == pre_surfs[0]);
+  ASSERT_TRUE(cast_ref<const CSGSurface &>(poly) == pre_surfs[0]);
 
   // expand unit and check surface of cell region again
   csg_obj->expandEngUnit(poly);
@@ -3079,7 +3079,7 @@ TEST(CSGBaseTest, joinOtherBaseIgnoreIdenticalUniverses)
   ASSERT_EQ(base1->getAllUniverses().size(), 2);
 }
 
-/// test CSGBase::checkUniverseLinking / getLinkedUniverses
+/// test CSGBase::checkUniverseLinking / getLinkedCSGObjects
 TEST(CSGBaseTest, testUniverseLinking)
 {
   auto csg_obj = std::make_unique<CSG::CSGBase>();

@@ -16,11 +16,9 @@
       []
       [verify]
         type = RunCommand
-        command = '../check.sh
-                  u
-                  OutputData/Diffusion/Run0/Cycle000001/proc000000.vtu
-                  u
-                  OutputData/DiffusionSub/Run0/Cycle000001/proc000000.vtu'
+        command = 'python -m mooseutils.csvdiff
+                  OutputData/parent_line_sample_0001.csv
+                  OutputData/sub_line_sample_0001.csv'
         prereq = MFEMShapeEvaluationTransfer/FromSubToParent/run
         capabilities = 'mfem'
         recover = false
@@ -117,14 +115,13 @@
       []
       [verify]
         type = RunCommand
-        command = '../check.sh
-                  u
-                  OutputData/Diffusion/Run0/Cycle000001/proc000000.vtu
-                  u
-                  OutputData/DiffusionSub/Run0/Cycle000001/proc000000.vtu'
+        command = 'python -m mooseutils.csvdiff
+                  OutputData/parent_line_sample_0001.csv
+                  OutputData/sub_line_sample_0001.csv'
         prereq = MFEMCopyTransfer/FromSubToParent/run
         capabilities = 'mfem'
         recover = false
+        min_slots = 2 # memory heavy
         detail = 'checking the sub-application and parent application outputs against each other.'
       []
     []
@@ -142,14 +139,13 @@
       []
       [verify]
         type = RunCommand
-        command = '../check.sh
-                  u
-                  OutputData/Diffusion/Run0/Cycle000001/proc000000.vtu
-                  u
-                  OutputData/DiffusionSub/Run0/Cycle000001/proc000000.vtu'
+        command = 'python -m mooseutils.csvdiff
+                  OutputData/parent_line_sample_0001.csv
+                  OutputData/sub_line_sample_0001.csv'
         prereq = MFEMCopyTransfer/ToSubFromParent/run
         capabilities = 'mfem'
         recover = false
+        min_slots = 2 # memory heavy
         detail = 'checking the sub-application and parent application outputs against each other.'
       []
     []
@@ -174,6 +170,7 @@
         capabilities = 'mfem'
         recover = false
         detail = 'checking the complex sub-application and complex parent application outputs against each other.'
+        min_slots = 2
       []
     []
     [ComplexToSubFromParent]

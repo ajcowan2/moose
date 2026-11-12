@@ -58,13 +58,13 @@ dataLoad(std::istream & stream, std::unique_ptr<DataType> & v, void * context)
 void
 dataStore(std::ostream & stream, DataStorage & v, void * context)
 {
-  dataStore(stream, static_cast<UniqueStorage<DataType> &>(v), context);
+  dataStore(stream, cast_ref<UniqueStorage<DataType> &>(v), context);
 }
 
 void
 dataLoad(std::istream & stream, DataStorage & v, void * context)
 {
-  dataLoad(stream, static_cast<UniqueStorage<DataType> &>(v), context);
+  dataLoad(stream, cast_ref<UniqueStorage<DataType> &>(v), context);
 }
 
 TEST(DataIOTest, signedChar)
@@ -204,6 +204,21 @@ TEST(DataIOTest, emptyTorchTensor)
   EXPECT_EQ(loaded_tensor.size(1), 0);
   EXPECT_EQ(loaded_tensor.size(2), 3);
   EXPECT_EQ(loaded_tensor.numel(), 0);
+}
+
+TEST(DataIOTest, undefinedTorchTensor)
+{
+  auto tensor = torch::Tensor();
+
+  std::stringstream ss;
+  dataStore(ss, tensor, nullptr);
+  EXPECT_EQ(tensor.defined(), false);
+
+  ss.seekg(0, std::ios::beg);
+  torch::Tensor loaded_tensor;
+  dataLoad(ss, loaded_tensor, nullptr);
+
+  EXPECT_EQ(loaded_tensor.defined(), false);
 }
 
 #endif
