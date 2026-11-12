@@ -12,6 +12,34 @@
 #include "MooseVariable.h"
 #include "libmesh/string_to_enum.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+
+namespace
+{
+/// Append a debug message to the per-rank file xfem_debug_rank<N>.log (opened once)
+void
+dbgEmitCut(const unsigned int rank, const std::string & msg)
+{
+  static std::ofstream f;
+  if (!f.is_open())
+    f.open("xfem_debug_rank" + std::to_string(rank) + ".log", std::ios::app);
+  f << msg << std::flush;
+}
+
+/// Format a number in compact scientific notation for the debug output
+std::string
+dbgFmtCut(const Real v)
+{
+  std::ostringstream o;
+  o << std::scientific << std::setprecision(6) << v;
+  return o.str();
+}
+}
+
 registerMooseObject("XFEMApp", LevelSetCutUserObject);
 
 InputParameters
@@ -20,6 +48,11 @@ LevelSetCutUserObject::validParams()
   InputParameters params = GeometricCutUserObject::validParams();
   params.addRequiredParam<VariableName>(
       "level_set_var", "The name of level set variable used to represent the interface");
+  params.addParam<bool>("debug",
+                        false,
+                        "Print every element cut closer than 1e-3 of an edge length to a node and every element "
+                        "with a node whose level set value is exactly zero but that is NOT cut "
+                        "(the strict product test ls1 * ls2 < 0 skips it).");
   params.addClassDescription("XFEM mesh cut by level set function");
   params.addParam<CutSubdomainID>(
       "negative_id", 0, "The CutSubdomainID corresponding to a non-positive signed distance");
@@ -39,8 +72,13 @@ LevelSetCutUserObject::LevelSetCutUserObject(const InputParameters & parameters)
     _system(_subproblem.getSystem(getParam<VariableName>("level_set_var"))),
     _solution(*_system.current_local_solution.get()),
     _negative_id(getParam<CutSubdomainID>("negative_id")),
-    _positive_id(getParam<CutSubdomainID>("positive_id"))
+    _positive_id(getParam<CutSubdomainID>("positive_id")),
+    _debug(getParam<bool>("debug"))
 {
+  if (_debug)
+    _console << "[DBG-INIT] " << type() << " '" << name()
+             << "': debug output on; per-rank files xfem_debug_rank<N>.log are written in "
+             << std::filesystem::current_path().string() << std::endl;
   mooseAssert(_negative_id != _positive_id,
               "LevelSetCutUserObject expects different CutSubdomainIDs for the "
               "negative_id and the positive_id.");
@@ -52,6 +90,9 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
                                             std::vector<Xfem::CutNode> & /*cut_nodes*/) const
 {
   bool cut_elem = false;
+
+  // Debug: smallest |level set| over the nodes of this element
+  Real dbg_min_abs_ls = std::numeric_limits<Real>::max();
 
   unsigned int n_sides = elem->n_sides();
 
@@ -74,6 +115,8 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
     Number ls_node_1 = _solution(ls_dof_id_1);
     Number ls_node_2 = _solution(ls_dof_id_2);
 
+    dbg_min_abs_ls = std::min({dbg_min_abs_ls, std::abs(ls_node_1), std::abs(ls_node_2)});
+
     if (ls_node_1 * ls_node_2 < 0)
     {
       cut_elem = true;
@@ -84,7 +127,32 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
       mycut._distance = seg_int_frac;
       mycut._host_side_id = i;
       cut_edges.push_back(mycut);
+
+      // Debug: only cuts within 1e-3 of an edge end are printed
+      if (_debug && processor_id() == 0 && (seg_int_frac < 1e-3 || seg_int_frac > 1 - 1e-3))
+      {
+      std::ostringstream dbg;
+      dbg << "[rank " << processor_id() << "] ";
+      dbg << "[DBG-CUT] t_step=" << _fe_problem.timeStep() << " elem=" << elem->id()
+                 << " side=" << i << " nodes=(" << node1->id() << "," << node2->id()
+                 << ") ls=(" << dbgFmtCut(ls_node_1) << "," << dbgFmtCut(ls_node_2)
+                 << ") cut_fraction_from_node1=" << dbgFmtCut(seg_int_frac)
+                 << ((seg_int_frac < 1e-3 || seg_int_frac > 1 - 1e-3) ? "  <-- DEGENERATE (cut within 1e-3 of a node)"
+                                                                    : "") << "\n";
+      dbgEmitCut(processor_id(), dbg.str());
+      }
     }
+  }
+
+  // Debug: an element touched by the interface exactly at a node is not cut by the strict test
+  if (_debug && processor_id() == 0 && !cut_elem && dbg_min_abs_ls <= 1e-14)
+  {
+    std::ostringstream dbg;
+    dbg << "[rank " << processor_id() << "] "
+        << "[DBG-CUT] t_step=" << _fe_problem.timeStep() << " elem=" << elem->id()
+        << " NOT CUT but min |ls| over its nodes = " << dbgFmtCut(dbg_min_abs_ls)
+        << " (interface passes through a node, strict ls1*ls2<0 test missed it)\n";
+    dbgEmitCut(processor_id(), dbg.str());
   }
 
   return cut_elem;

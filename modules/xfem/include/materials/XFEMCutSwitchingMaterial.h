@@ -10,6 +10,8 @@
 #pragma once
 
 #include "Material.h"
+
+#include <map>
 #include "XFEM.h"
 #include "ADRankTwoTensorForward.h"
 #include "ADRankThreeTensorForward.h"
@@ -63,6 +65,12 @@ private:
 
   /// current mapped material property
   const GenericMaterialProperty<T, is_ad> * _mapped_prop;
+
+  /// Print which base material is chosen for cut elements (see debug parameter)
+  const bool _debug;
+
+  /// Debug: last CutSubdomainID printed for each element id
+  std::map<dof_id_type, CutSubdomainID> _dbg_last_key;
 };
 
 typedef XFEMCutSwitchingMaterialTempl<Real, false> XFEMCutSwitchingMaterialReal;

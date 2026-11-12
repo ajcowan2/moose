@@ -59,4 +59,7 @@ protected:
 
   /// The ID for the positive side of the cut
   const CutSubdomainID _positive_id;
+
+  /// Print diagnostics of cut and almost-cut elements (see debug parameter)
+  const bool _debug;
 };

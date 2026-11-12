@@ -64,9 +64,30 @@ public:
 
   std::map<unsigned int, RealVectorValue> getLevelSetNormal() const { return _level_set_normal; };
 
+  /**
+   * Physical volume fraction of the cut element used on the positive level set side of each
+   * interface point (a small value means a sliver element).
+   */
+  const std::map<unsigned int, Real> & getPhysicalVolumeFractionAtPositiveLevelSet() const
+  {
+    return _vf_positive_level_set_side;
+  }
+
+  /// Same for the element used on the negative level set side
+  const std::map<unsigned int, Real> & getPhysicalVolumeFractionAtNegativeLevelSet() const
+  {
+    return _vf_negative_level_set_side;
+  }
+
   unsigned int numberNodes() const { return _qp_points.size(); };
 
   std::map<unsigned int, Point> getQpPoint() const { return _qp_points; };
+
+  /// One-line diagnostic text with the interface point counts of the latest execute()
+  std::string getDebugReport() const;
+
+  /// Number of execute() calls so far; consumers use it to detect a new evaluation
+  unsigned int getDebugExecCount() const { return _dbg_exec_count; }
 
 protected:
   /**
@@ -77,6 +98,19 @@ protected:
    * contains this point.
    */
   const Elem * getElemContainingPoint(const Point & p, bool positive_level_set);
+
+  /**
+   * Debug only: dump the nodes of a side element (sliver, large gradient or reference) used at an
+   * interface point. Must be called right after reinitElemPhys(elem, {p}).
+   * @param i Interface point index
+   * @param p The interface point
+   * @param elem The element used on this side
+   * @param positive_side True if elem is the positive level set side element
+   */
+  void debugDumpElem(const unsigned int i,
+                     const Point & p,
+                     const Elem & elem,
+                     const bool positive_side);
 
   /// The computation mesh
   MooseMesh & _mesh;
@@ -111,6 +145,12 @@ protected:
   /// The subproblem solution vector
   const NumericVector<Number> & _solution;
 
+  /// System of the sampled variable
+  const System & _u_system;
+
+  /// Solution vector of the system of the sampled variable (debug dumps of nodal values)
+  const NumericVector<Number> & _u_solution;
+
   /// Mapping from point index and its values at the positive level set side
   std::map<unsigned int, Real> _values_positive_level_set_side;
 
@@ -125,4 +165,49 @@ protected:
 
   /// Mapping from point index and its gradient at the negative level set side
   std::map<unsigned int, RealVectorValue> _level_set_normal;
+
+  /// Mapping from point index to the physical volume fraction of its positive side element
+  std::map<unsigned int, Real> _vf_positive_level_set_side;
+
+  /// Mapping from point index to the physical volume fraction of its negative side element
+  std::map<unsigned int, Real> _vf_negative_level_set_side;
+
+  /// Print diagnostics of the interface point sampling (see debug parameter)
+  const bool _debug;
+
+  /// Side elements with a physical volume fraction below this get a [DBG-SLV] node dump
+  const Real _dbg_sliver_fraction;
+
+  /// Non-sliver side elements with |grad_u.n| above this are dumped too
+  const Real _dbg_gradient_threshold;
+
+  /// Number of well-resolved reference elements dumped per execute()
+  const unsigned int _dbg_n_reference;
+
+  /// Maximum number of [DBG-SLV] dumps per execute() (limits the log size)
+  const std::size_t _dbg_max_slv_records = 12;
+
+  /// [DBG-SLV] dumps of the latest execute()
+  std::vector<std::string> _dbg_slv_records;
+
+  /// Reference dumps done in the latest execute()
+  unsigned int _dbg_n_reference_done = 0;
+
+  ///@{ Segment length and geometric normal of the cut of each interface point (debug only)
+  std::map<unsigned int, Real> _dbg_seg_length;
+  std::map<unsigned int, Point> _dbg_geom_normal;
+  std::vector<Real> _dbg_seg_length_vector;
+  std::vector<Point> _dbg_geom_normal_vector;
+  ///@}
+
+  /// Number of execute() calls so far
+  unsigned int _dbg_exec_count = 0;
+
+  ///@{ Debug counters of the latest execute(): points and points without a value per side
+  unsigned int _dbg_n_qp = 0;
+  unsigned int _dbg_local_pos_missing = 0;
+  unsigned int _dbg_local_neg_missing = 0;
+  unsigned int _dbg_global_pos_missing = 0;
+  unsigned int _dbg_global_neg_missing = 0;
+  ///@}
 };

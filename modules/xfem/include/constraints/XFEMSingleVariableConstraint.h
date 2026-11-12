@@ -50,6 +50,9 @@ protected:
   /// Use penalty formulation
   bool _use_penalty;
 
+  /// Multiply the interface quadrature weights by the coordinate transformation factor (2 pi r in RZ)
+  const bool _rz_interface_weighting;
+
   /// Pointer to the XFEM controller object
   std::shared_ptr<XFEM> _xfem;
 };

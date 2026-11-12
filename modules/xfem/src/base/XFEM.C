@@ -2464,6 +2464,17 @@ XFEM::getCutSubdomainID(const GeometricCutUserObject * gcuo,
 const Node *
 XFEM::pickFirstPhysicalNode(const Elem * e, const Elem * e0) const
 {
+  // Prefer a node that was not created by XFEM. The nodes XFEM creates are the phantom nodes that
+  // stand in for the corners of the other side of the cut, and they carry the level set value of
+  // that corner. isPointInsidePhysicalDomain() is true for every node of a fragment element that is
+  // not in the cut element map, so without this the first node of the fragment can be a phantom
+  // node and the CutSubdomainID (and any material switched on it) comes from the wrong side.
+  for (auto i : e0->node_index_range())
+    if (_saved_new_nodes.find(e0->node_ref(i).id()) == _saved_new_nodes.end() &&
+        isPointInsidePhysicalDomain(e, e0->node_ref(i)))
+      return e0->node_ptr(i);
+
+  // Every physical node is a phantom node (or none could be told apart): previous behavior
   for (auto i : e0->node_index_range())
     if (isPointInsidePhysicalDomain(e, e0->node_ref(i)))
       return e0->node_ptr(i);

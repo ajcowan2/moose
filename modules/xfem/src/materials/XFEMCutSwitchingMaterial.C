@@ -9,6 +9,26 @@
 
 #include "XFEMCutSwitchingMaterial.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <type_traits>
+
+namespace
+{
+/// Append a debug message to the per-rank file xfem_debug_rank<N>.log (opened once)
+void
+dbgEmitMat(const unsigned int rank, const std::string & msg)
+{
+  static std::ofstream f;
+  if (!f.is_open())
+    f.open("xfem_debug_rank" + std::to_string(rank) + ".log", std::ios::app);
+  f << msg << std::flush;
+}
+}
+
 registerMooseObject("XFEMApp", XFEMCutSwitchingMaterialReal);
 registerMooseObject("XFEMApp", XFEMCutSwitchingMaterialRankTwoTensor);
 registerMooseObject("XFEMApp", XFEMCutSwitchingMaterialRankThreeTensor);
@@ -34,6 +54,11 @@ XFEMCutSwitchingMaterialTempl<T, is_ad>::validParams()
   params.addParam<std::string>("base_name",
                                "Base name to prepend for the computed material property.");
   params.addRequiredParam<std::string>("prop_name", "name of the material property to switch");
+  params.addParam<bool>("debug",
+                        false,
+                        "For cut elements, print the CutSubdomainID, the chosen base material and "
+                        "(for Real properties) the property value whenever an element is first "
+                        "seen or its CutSubdomainID changes.");
   return params;
 }
 
@@ -46,8 +71,13 @@ XFEMCutSwitchingMaterialTempl<T, is_ad>::XFEMCutSwitchingMaterialTempl(
     _vals(getParam<std::vector<std::string>>("base_names")),
     _base_name(isParamValid("base_name") ? getParam<std::string>("base_name") + "_" : ""),
     _prop_name(getParam<std::string>("prop_name")),
-    _prop(declareGenericProperty<T, is_ad>(_base_name + _prop_name))
+    _prop(declareGenericProperty<T, is_ad>(_base_name + _prop_name)),
+    _debug(getParam<bool>("debug"))
 {
+  if (_debug)
+    _console << "[DBG-INIT] " << type() << " '" << name()
+             << "': debug output on; per-rank files xfem_debug_rank<N>.log are written in "
+             << std::filesystem::current_path().string() << std::endl;
   FEProblemBase * fe_problem = dynamic_cast<FEProblemBase *>(&_subproblem);
   if (!fe_problem)
     mooseError("Problem casting _subproblem to FEProblemBase");
@@ -87,6 +117,35 @@ XFEMCutSwitchingMaterialTempl<T, is_ad>::computeProperties()
   }
 
   Material::computeProperties();
+
+  if (_debug && _xfem->isElemCut(_current_elem))
+  {
+    const auto it = _dbg_last_key.find(_current_elem->id());
+    if (it == _dbg_last_key.end() || it->second != key)
+    {
+      std::string chosen = "?";
+      for (const auto i : index_range(_keys))
+        if (_keys[i] == key)
+          chosen = _vals[i];
+      std::ostringstream value;
+      if constexpr (!is_ad && std::is_same<T, Real>::value)
+        value << std::scientific << std::setprecision(4) << (*_mapped_prop)[0];
+      else
+        value << "n/a";
+      {
+      std::ostringstream dbg;
+      dbg << "[rank " << processor_id() << "] ";
+      dbg << "[DBG-MAT] " << name() << " t_step=" << _fe_problem.timeStep()
+               << " elem=" << _current_elem->id() << " CutSubdomainID=" << key
+               << (it == _dbg_last_key.end() ? " (first seen)"
+                                             : " (changed from " + std::to_string(it->second) + ")")
+               << " base_name=" << chosen << " " << _prop_name << "=" << value.str()
+               << " phys_vol_fraction=" << _xfem->getPhysicalVolumeFraction(_current_elem) << "\n";
+      dbgEmitMat(processor_id(), dbg.str());
+    }
+      _dbg_last_key[_current_elem->id()] = key;
+    }
+  }
 }
 
 template class XFEMCutSwitchingMaterialTempl<Real, false>;

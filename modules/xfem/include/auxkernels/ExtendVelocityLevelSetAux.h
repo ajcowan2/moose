@@ -12,6 +12,9 @@
 #include "AuxKernel.h"
 #include "QpPointValueAtXFEMInterface.h"
 
+#include <set>
+#include <vector>
+
 class QpPointValueAtXFEMInterface;
 
 /**
@@ -37,8 +40,14 @@ protected:
   /// Scalar multiplier applied to the computed velocity
   Real _scale_factor;
 
+  /// Grain-boundary volume fraction g of the converted material (STEFAN): jump_c -> g * jump_c
+  const Real _gb_volume_fraction;
+
+  /// STEFAN only: volume swept per mole of Pd consumed [m^3/mol]; 0 = Pd2Si product volume V_Pd2Si / 2 (1 / jump_c)
+  const Real _stefan_volume_per_Pd;
+
   /// The model type to use for velocity calculation
-  const enum class model_type { empirical_correlation, INL_ROM, Stefan } _model_type;
+  const enum class model_type { empirical_correlation, INL_ROM, Stefan, pit_corrosion } _model_type;
 
   /// Mapping from point index and its values at the positive level set side
   std::map<unsigned int, Real> _values_positive_level_set_side;
@@ -56,4 +65,16 @@ protected:
   std::map<unsigned int, RealVectorValue> _level_set_normal;
 
   std::map<unsigned int, Point> _qp_points;
+
+  /// Print per-interface-point velocity terms (see debug parameter)
+  const bool _debug;
+
+  /// Debug: only print at time steps that are a multiple of this number
+  const unsigned int _debug_interval;
+
+  /// Debug: value of the user object execute counter at the last printed sweep
+  unsigned int _dbg_last_exec_count = 0;
+
+  /// Debug: interface point indices already printed in the current sweep
+  std::set<unsigned int> _dbg_printed_qps;
 };

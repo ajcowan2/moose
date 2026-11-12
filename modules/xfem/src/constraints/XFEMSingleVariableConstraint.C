@@ -41,6 +41,13 @@ XFEMSingleVariableConstraint::validParams()
       "use_penalty",
       false,
       "Use the Penalty instead of Nitsche (Nitsche only works for simple diffusion problems).");
+  params.addParam<bool>("rz_interface_weighting",
+                        false,
+                        "Multiply the interface quadrature weights by the coordinate transformation "
+                        "factor of the mesh (2 pi r for coord_type = RZ, 1 for Cartesian), the same "
+                        "factor MOOSE applies to volume and boundary integrals. Without it the "
+                        "interface terms are 1 / (2 pi r) times too strong relative to the bulk "
+                        "terms in an axisymmetric model.");
   params.addClassDescription("Enforce constraints on the value or flux associated with a variable "
                              "at an XFEM interface.");
   return params;
@@ -51,7 +58,8 @@ XFEMSingleVariableConstraint::XFEMSingleVariableConstraint(const InputParameters
     _alpha(getParam<Real>("alpha")),
     _jump(getFunction("jump")),
     _jump_flux(getFunction("jump_flux")),
-    _use_penalty(getParam<bool>("use_penalty"))
+    _use_penalty(getParam<bool>("use_penalty")),
+    _rz_interface_weighting(getParam<bool>("rz_interface_weighting"))
 {
   _xfem = std::dynamic_pointer_cast<XFEM>(_fe_problem.getXFEM());
   if (_xfem == nullptr)
@@ -73,6 +81,17 @@ XFEMSingleVariableConstraint::reinitConstraintQuadrature(const ElementPairInfo &
 {
   _interface_normal = element_pair_info._elem1_normal;
   ElemElemConstraint::reinitConstraintQuadrature(element_pair_info);
+
+  // The cut line / surface weights from XFEM do not include the coordinate transformation factor
+  // that MOOSE applies to the bulk (JxW) and boundary integrals.
+  if (_rz_interface_weighting)
+    for (const auto qp : index_range(_constraint_weight))
+    {
+      Real coord = 1.0;
+      coordTransformFactor(
+          _subproblem, _current_elem->subdomain_id(), _constraint_q_point[qp], coord);
+      _constraint_weight[qp] *= coord;
+    }
 }
 
 Real
